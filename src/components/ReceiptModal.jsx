@@ -27,6 +27,34 @@ export default function ReceiptModal({ onClose, addTransaction, mobile }) {
     setItems([...items, { item: '', qty: 1, price: 0, category: 'Other' }])
   }
 
+  const compressImage = (file, maxWidth = 1200) => {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let { width, height } = img
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width
+          width = maxWidth
+        }
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+        resolve(dataUrl.split(',')[1])
+        URL.revokeObjectURL(img.src)
+      }
+      img.onerror = () => {
+        // Fallback: read original file
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result.split(',')[1])
+        reader.readAsDataURL(file)
+      }
+      img.src = URL.createObjectURL(file)
+    })
+  }
+
   const handleFile = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -35,14 +63,8 @@ export default function ReceiptModal({ onClose, addTransaction, mobile }) {
     setError('')
 
     try {
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result.split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
-
-      const mediaType = file.type || 'image/jpeg'
+      const base64 = await compressImage(file)
+      const mediaType = 'image/jpeg'
 
       const res = await fetch('/api/anthropic', {
         method: 'POST',
@@ -71,13 +93,18 @@ Choose the best matching category for each item. If unsure, use "Other".`,
       })
 
       if (!res.ok) {
-        const errBody = await res.text()
-        throw new Error(`API error ${res.status}: ${errBody}`)
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || `API error ${res.status}`)
       }
 
       const data = await res.json()
       const text = data.content?.[0]?.text || ''
-      const parsed = JSON.parse(text)
+
+      // Strip markdown code fences if present
+      const cleaned = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
+      if (!cleaned) throw new Error('No text returned from scanner')
+
+      const parsed = JSON.parse(cleaned)
 
       setStore(parsed.store || '')
       setDate(parsed.date || today())
