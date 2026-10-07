@@ -65,6 +65,12 @@ export function StatCard({ icon: Ic, label, value, sub, color, mobile }) {
   )
 }
 
-export function Empty({ text }) {
-  return <p style={{ color: '#64748b', textAlign: 'center', padding: '20px 16px', fontSize: 13 }}>{text}</p>
+export function Empty({ text, message, msg, icon: Icon, children }) {
+  const display = text || message || msg || children
+  return (
+    <div style={{ color: '#64748b', textAlign: 'center', padding: '32px 16px', fontSize: 13 }}>
+      {Icon && <Icon size={32} style={{ marginBottom: 8, opacity: 0.5 }} />}
+      <p style={{ margin: 0 }}>{display}</p>
+    </div>
+  )
 }

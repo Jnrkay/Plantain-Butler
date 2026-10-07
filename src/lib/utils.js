@@ -5,10 +5,15 @@ export const fmt = (n) => `GHS ${Number(n || 0).toFixed(2)}`
 
 export const today = () => new Date().toISOString().split('T')[0]
 
-export const monthKey = (d) => d?.slice(0, 7) || today().slice(0, 7)
+export const monthKey = (d) => {
+  if (!d) return today().slice(0, 7)
+  if (d instanceof Date) return d.toISOString().slice(0, 7)
+  return d.slice(0, 7)
+}
 
 export const monthLabel = (mk) => {
-  const [y, m] = mk.split('-')
+  const key = mk instanceof Date ? monthKey(mk) : mk
+  const [y, m] = key.split('-')
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   return `${months[+m - 1]} '${y.slice(2)}`
 }
