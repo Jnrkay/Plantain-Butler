@@ -9,6 +9,8 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
   const [p, setP] = useState({ ...profile })
   const [saved, setSaved] = useState(false)
   const [confirming, setConfirming] = useState(null)
+  const [showPasteImport, setShowPasteImport] = useState(false)
+  const [pasteText, setPasteText] = useState('')
 
   const showKids = p.householdType === 'Family with kids' || p.householdType === 'Extended family'
   const showAdults = p.householdType && p.householdType !== 'Single person'
@@ -45,6 +47,17 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
       }
     }
     reader.readAsText(file)
+  }
+
+  const handlePasteImport = () => {
+    if (!pasteText.trim()) return
+    try {
+      const data = JSON.parse(pasteText.trim())
+      importData(data)
+      window.location.reload()
+    } catch (err) {
+      alert('Invalid data: ' + err.message)
+    }
   }
 
   const clearConfirm = (key, action) => {
@@ -176,10 +189,33 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
               Export Backup
             </button>
             <label style={{ ...btnStyle, background: '#1e2030', color: '#06b6d4', padding: '8px 14px', fontSize: 12, display: 'inline-flex', alignItems: 'center' }}>
-              Import Backup
+              Import File
               <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
             </label>
+            <button onClick={() => setShowPasteImport(!showPasteImport)} style={{ ...btnStyle, background: showPasteImport ? '#06b6d4' : '#1e2030', color: showPasteImport ? '#0f1117' : '#06b6d4', padding: '8px 14px', fontSize: 12 }}>
+              Paste Import
+            </button>
           </div>
+
+          {showPasteImport && (
+            <div style={{ background: '#1a1d2e', borderRadius: 8, padding: 12, marginTop: 4 }}>
+              <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 8px' }}>Paste your exported JSON data from the artifact below:</p>
+              <textarea
+                value={pasteText}
+                onChange={e => setPasteText(e.target.value)}
+                placeholder='Paste JSON data here...'
+                style={{ ...inputStyle, height: 100, fontSize: 11, fontFamily: 'monospace', resize: 'vertical' }}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={handlePasteImport} disabled={!pasteText.trim()} style={{ ...btnPrimary, padding: '6px 14px', fontSize: 12, opacity: pasteText.trim() ? 1 : 0.4 }}>
+                  Import Data
+                </button>
+                <button onClick={() => { setShowPasteImport(false); setPasteText('') }} style={{ ...btnStyle, background: '#1e2030', color: '#94a3b8', padding: '6px 14px', fontSize: 12 }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           <div style={{ borderTop: '1px solid #1e2030', paddingTop: 12, marginTop: 4 }}>
             <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 10px' }}>Clear data</p>
