@@ -48,7 +48,7 @@ export default function ReceiptModal({ onClose, addTransaction, mobile }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4-6',
           max_tokens: 2048,
           system: `You are a receipt OCR assistant. Extract items from the receipt image and return ONLY valid JSON (no markdown, no code fences) with this structure:
 {
