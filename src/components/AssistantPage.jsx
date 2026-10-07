@@ -2,17 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send } from 'lucide-react';
 import { STOCK_STATUS } from '../lib/constants';
 import { fmt, today, monthKey } from '../lib/utils';
-import { inputStyle, btnPrimary } from '../lib/styles';
-
-const COLORS = {
-  bg: '#0f1117', surface: '#161822', surface2: '#1a1d2e',
-  border: '#1e2030', text: '#e2e8f0', muted: '#94a3b8',
-  dim: '#64748b', accent: '#06b6d4',
-};
+import { T, monoLabel } from '../lib/theme';
 
 const INITIAL_MSG = {
   role: 'assistant',
-  content: "Hi! I'm your Plantain Butler \u{1F34C} Ask me anything about your spending, inventory, or budget.\n\nTry:\n• How much did I spend this month?\n• What's running low?\n• Help me optimize my budget.",
+  content: "Hi! I'm your Plantain Butler. Ask me anything about your spending, inventory, or budget.\n\nTry:\n• How much did I spend this month?\n• What's running low?\n• Help me optimize my budget.",
 };
 
 export default function AssistantPage({ transactions, inventory, profile, mobile }) {
@@ -81,7 +75,6 @@ Be helpful, concise, and practical. Format currency as ₵X.XX.`;
     setLoading(true);
 
     try {
-      // Build API messages: skip the initial assistant greeting, use last 20
       const apiMessages = updated
         .slice(1)
         .slice(-20)
@@ -102,70 +95,128 @@ Be helpful, concise, and practical. Format currency as ₵X.XX.`;
       const reply = data.content?.[0]?.text || 'Sorry, I could not process that.';
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong. Please try again.' }]);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Something went wrong. Please try again.',
+        error: true,
+      }]);
     } finally {
       setLoading(false);
     }
   };
 
   const containerStyle = {
-    display: 'flex', flexDirection: 'column',
-    height: mobile ? 'calc(100vh - 68px)' : 'calc(100vh - 48px)',
+    display: 'flex',
+    flexDirection: 'column',
+    height: mobile ? 'calc(100vh - 100px)' : 'calc(100vh - 48px)',
+    backgroundColor: T.surface,
+    fontFamily: T.fontSans,
+  };
+
+  const headerStyle = {
+    padding: '16px 0 8px',
+    ...monoLabel,
   };
 
   const chatAreaStyle = {
-    flex: 1, overflowY: 'auto', padding: '16px 0',
-    display: 'flex', flexDirection: 'column', gap: 12,
+    flex: 1,
+    overflowY: 'auto',
+    padding: '16px 0',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
   };
 
   const bubbleBase = {
-    maxWidth: '80%', padding: '10px 14px', borderRadius: 14,
-    fontSize: 14, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+    maxWidth: '80%',
+    padding: '10px 14px',
+    fontSize: 14,
+    lineHeight: 1.55,
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    fontFamily: T.fontSans,
   };
 
   const userBubble = {
     ...bubbleBase,
     alignSelf: 'flex-end',
-    backgroundColor: COLORS.accent,
-    color: '#0f1117',
-    borderBottomRightRadius: 4,
+    backgroundColor: T.teal,
+    color: T.warm,
+    borderRadius: `${T.radiusMd}px ${T.radiusMd}px 4px ${T.radiusMd}px`,
   };
 
   const assistantBubble = {
     ...bubbleBase,
     alignSelf: 'flex-start',
-    backgroundColor: COLORS.surface2,
-    color: COLORS.text,
-    borderBottomLeftRadius: 4,
+    backgroundColor: T.surfaceCard,
+    color: T.text,
+    border: `1px solid ${T.borderLight}`,
+    borderRadius: `${T.radiusMd}px ${T.radiusMd}px ${T.radiusMd}px 4px`,
   };
 
   const inputBarStyle = {
-    display: 'flex', gap: 8, padding: '12px 0',
-    borderTop: `1px solid ${COLORS.border}`,
+    display: 'flex',
+    gap: 8,
+    padding: '12px 0',
+    backgroundColor: T.surfaceCard,
+    borderTop: `1px solid ${T.borderLight}`,
+    margin: '0 -16px',
+    paddingLeft: 16,
+    paddingRight: 16,
   };
 
   const chatInputStyle = {
-    ...inputStyle,
-    flex: 1, margin: 0,
+    flex: 1,
+    margin: 0,
+    padding: '10px 14px',
+    fontSize: 14,
+    fontFamily: T.fontSans,
+    backgroundColor: '#ffffff',
+    border: `1px solid ${T.border}`,
+    borderRadius: T.radiusMd,
+    outline: 'none',
+    color: T.text,
   };
 
   const sendBtnStyle = {
-    ...btnPrimary,
-    padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: '8px 14px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
+    backgroundColor: T.amber,
+    color: T.accentText,
+    border: 'none',
+    borderRadius: T.radiusMd,
+    cursor: 'pointer',
+    fontFamily: T.fontSans,
+    fontWeight: T.semibold,
+  };
+
+  const emptyHint = {
+    color: T.textMuted,
+    fontSize: 14,
+    textAlign: 'center',
+    padding: '24px 16px',
+    fontFamily: T.fontSans,
   };
 
   return (
     <div style={containerStyle}>
+      <div style={headerStyle}>BUTLER</div>
       <div style={chatAreaStyle}>
         {messages.map((m, i) => (
           <div key={i} style={m.role === 'user' ? userBubble : assistantBubble}>
-            {m.content}
+            {m.error ? (
+              <span style={{ color: T.error }}>{m.content}</span>
+            ) : (
+              m.content
+            )}
           </div>
         ))}
         {loading && (
           <div style={assistantBubble}>
-            <span style={{ color: COLORS.muted }}>Thinking...</span>
+            <span style={{ color: T.textLight }}>Thinking...</span>
           </div>
         )}
         <div ref={endRef} />

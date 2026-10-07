@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { Camera, X } from 'lucide-react'
 import { CATEGORIES } from '../lib/constants'
 import { today } from '../lib/utils'
+import { T } from '../lib/theme'
 import { inputStyle, inputSm, labelStyle, btnStyle, btnPrimary, iconBtn } from '../lib/styles'
 import { ModalWrapper } from './shared'
 
@@ -144,8 +145,9 @@ Choose the best matching category for each item. If unsure, use "Other".`,
           <div
             onClick={() => fileRef.current?.click()}
             style={{
-              border: '2px dashed #2a2d3e',
-              borderRadius: 12,
+              border: `2px dashed ${T.border}`,
+              borderRadius: T.radiusMd,
+              background: T.surfaceCard,
               padding: mobile ? '32px 16px' : '48px 24px',
               display: 'flex',
               flexDirection: 'column',
@@ -155,9 +157,9 @@ Choose the best matching category for each item. If unsure, use "Other".`,
               textAlign: 'center',
             }}
           >
-            <Camera size={32} color="#64748b" />
-            <p style={{ color: '#94a3b8', fontSize: 14, margin: 0 }}>Tap to upload receipt</p>
-            <p style={{ color: '#64748b', fontSize: 12, margin: 0 }}>Take a photo or select an image</p>
+            <Camera size={32} color={T.textLight} />
+            <p style={{ color: T.textMuted, fontSize: 14, margin: 0, fontFamily: T.fontSans }}>Tap to upload receipt</p>
+            <p style={{ color: T.textLight, fontSize: 12, margin: 0, fontFamily: T.fontSans }}>Take a photo or select an image</p>
           </div>
           <input
             ref={fileRef}
@@ -168,7 +170,7 @@ Choose the best matching category for each item. If unsure, use "Other".`,
             style={{ display: 'none' }}
           />
           {error && (
-            <p style={{ color: '#ef4444', fontSize: 12, marginTop: 10 }}>{error}</p>
+            <p style={{ color: T.error, fontSize: 12, marginTop: 10, fontFamily: T.fontSans }}>{error}</p>
           )}
         </div>
       )}
@@ -176,8 +178,8 @@ Choose the best matching category for each item. If unsure, use "Other".`,
       {step === 'scanning' && (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>
           <div style={{ fontSize: 28, marginBottom: 12 }}>🔍</div>
-          <p style={{ color: '#94a3b8', fontSize: 14 }}>Scanning receipt...</p>
-          <p style={{ color: '#64748b', fontSize: 12 }}>This may take a few seconds</p>
+          <p style={{ color: T.teal, fontSize: 14, fontWeight: T.medium, fontFamily: T.fontSans }}>Scanning receipt...</p>
+          <p style={{ color: T.textLight, fontSize: 12, fontFamily: T.fontSans }}>This may take a few seconds</p>
         </div>
       )}
 
@@ -222,21 +224,21 @@ Choose the best matching category for each item. If unsure, use "Other".`,
                       {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
-                  <button onClick={() => removeItem(i)} style={{ ...iconBtn, alignSelf: 'center' }}>
+                  <button onClick={() => removeItem(i)} style={{ ...iconBtn, color: T.error, alignSelf: 'center' }}>
                     <X size={16} />
                   </button>
                 </div>
               ))}
             </div>
-            <button onClick={addMissing} style={{ ...btnStyle, background: 'none', color: '#06b6d4', padding: '6px 0', fontSize: 12, marginTop: 6 }}>
+            <button onClick={addMissing} style={{ ...btnStyle, background: 'none', boxShadow: 'none', color: T.teal, padding: '6px 0', fontSize: 12, marginTop: 6, fontFamily: T.fontSans }}>
               + Add missing
             </button>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-            <button onClick={handleRescan} style={{ ...btnStyle, background: '#1e2030', color: '#94a3b8' }}>Re-scan</button>
+            <button onClick={handleRescan} style={btnStyle}>Re-scan</button>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={onClose} style={{ ...btnStyle, background: '#1e2030', color: '#94a3b8' }}>Cancel</button>
+              <button onClick={onClose} style={btnStyle}>Cancel</button>
               <button onClick={handleConfirm} style={btnPrimary}>Confirm</button>
             </div>
           </div>

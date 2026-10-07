@@ -4,12 +4,7 @@ import { CATEGORIES } from '../lib/constants';
 import { uid, fmt } from '../lib/utils';
 import { inputSm, labelStyle, btnStyle, btnPrimary, iconBtn } from '../lib/styles';
 import { Empty } from './shared';
-
-const COLORS = {
-  bg: '#0f1117', surface: '#161822', surface2: '#1a1d2e',
-  border: '#1e2030', text: '#e2e8f0', muted: '#94a3b8',
-  dim: '#64748b', accent: '#06b6d4',
-};
+import { T, monoLabel } from '../lib/theme';
 
 export default function ShoppingPage({ shoppingList, saveSL, genShoppingList, mobile }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -40,53 +35,89 @@ export default function ShoppingPage({ shoppingList, saveSL, genShoppingList, mo
     setShowAdd(false);
   };
 
+  const pageStyle = {
+    padding: mobile ? '20px 16px' : '32px 40px',
+    maxWidth: 800,
+    margin: '0 auto',
+  };
+
   const headerStyle = {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 16, flexWrap: 'wrap', gap: 8,
   };
 
   const progressStyle = {
-    fontSize: 13, color: COLORS.muted,
+    fontSize: 13, color: T.textMuted, fontFamily: T.fontSans,
   };
 
   const chipStyle = {
-    fontSize: 11, padding: '2px 8px', borderRadius: 9999,
-    backgroundColor: COLORS.surface2, color: COLORS.dim,
-    whiteSpace: 'nowrap',
+    fontSize: 11, padding: '2px 8px', borderRadius: T.radiusPill,
+    backgroundColor: T.teal + '15', color: T.teal,
+    whiteSpace: 'nowrap', fontFamily: T.fontSans,
   };
 
   const itemStyle = (isChecked) => ({
     display: 'flex', alignItems: 'center', gap: 12,
-    padding: '10px 12px', borderRadius: 10,
-    backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`,
-    marginBottom: 8, opacity: isChecked ? 0.45 : 1,
+    padding: '10px 12px', borderRadius: T.radiusMd,
+    backgroundColor: T.surfaceCard, border: `1px solid ${T.borderLight}`,
+    boxShadow: T.shadowSm,
+    marginBottom: 8, opacity: isChecked ? 0.55 : 1,
     transition: 'opacity 0.2s',
   });
 
   const checkboxStyle = (isChecked) => ({
     width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-    border: `2px solid ${isChecked ? COLORS.accent : '#2a2d3e'}`,
-    backgroundColor: isChecked ? COLORS.accent : 'transparent',
+    border: `2px solid ${isChecked ? T.teal : T.border}`,
+    backgroundColor: isChecked ? T.teal : 'transparent',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     cursor: 'pointer', transition: 'all 0.15s',
   });
 
   const nameStyle = (isChecked) => ({
-    flex: 1, fontSize: 14, color: COLORS.text, minWidth: 0,
+    flex: 1, fontSize: 14, color: isChecked ? T.textLight : T.text,
+    fontFamily: T.fontSans, minWidth: 0,
     textDecoration: isChecked ? 'line-through' : 'none',
   });
 
   const formRowStyle = {
     display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap',
-    padding: 12, borderRadius: 10, marginBottom: 12,
-    backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`,
+    padding: 12, borderRadius: T.radiusMd, marginBottom: 12,
+    backgroundColor: T.surfaceCard, border: `1px solid ${T.borderLight}`,
+    boxShadow: T.shadowSm,
+  };
+
+  const generateBtnStyle = {
+    ...btnStyle,
+    fontSize: 13,
+    padding: '6px 14px',
+    backgroundColor: T.amber,
+    color: T.accentText,
+    border: 'none',
+    fontWeight: T.semibold,
+    borderRadius: T.radiusMd,
+  };
+
+  const addBtnStyle = {
+    ...btnPrimary,
+    fontSize: 13,
+    padding: '6px 14px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: T.radiusMd,
+  };
+
+  const clearBtnStyle = {
+    ...iconBtn,
+    padding: 4,
   };
 
   return (
-    <div>
+    <div style={pageStyle}>
       <div style={headerStyle}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: COLORS.text }}>
+          <div style={{ ...monoLabel, marginBottom: 4 }}>SHOPPING</div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: T.semibold, color: T.text, fontFamily: T.fontSans }}>
             Shopping List
           </h2>
           <span style={progressStyle}>
@@ -94,11 +125,11 @@ export default function ShoppingPage({ shoppingList, saveSL, genShoppingList, mo
           </span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ ...btnStyle, fontSize: 13, padding: '6px 14px' }} onClick={genShoppingList}>
+          <button style={generateBtnStyle} onClick={genShoppingList}>
             Auto
           </button>
           <button
-            style={{ ...btnPrimary, fontSize: 13, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 4 }}
+            style={addBtnStyle}
             onClick={() => setShowAdd(!showAdd)}
           >
             <Plus size={14} /> Add
@@ -139,7 +170,7 @@ export default function ShoppingPage({ shoppingList, saveSL, genShoppingList, mo
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
-          <button style={{ ...btnPrimary, padding: '7px 16px', fontSize: 13, marginBottom: 1 }} onClick={add}>
+          <button style={{ ...btnPrimary, padding: '7px 16px', fontSize: 13, marginBottom: 1, borderRadius: T.radiusMd }} onClick={add}>
             Add
           </button>
         </div>
@@ -152,17 +183,17 @@ export default function ShoppingPage({ shoppingList, saveSL, genShoppingList, mo
           {shoppingList.map(item => (
             <div key={item.id} style={itemStyle(item.checked)}>
               <div style={checkboxStyle(item.checked)} onClick={() => toggle(item.id)}>
-                {item.checked && <Check size={14} color="#0f1117" strokeWidth={3} />}
+                {item.checked && <Check size={14} color={T.surfaceCard} strokeWidth={3} />}
               </div>
               <span style={nameStyle(item.checked)}>{item.name}</span>
               {!mobile && item.category && (
                 <span style={chipStyle}>{item.category}</span>
               )}
-              <span style={{ fontSize: 13, color: COLORS.muted, whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 13, color: T.textMuted, whiteSpace: 'nowrap', fontFamily: T.fontMono }}>
                 {fmt(item.estPrice || 0)}
               </span>
-              <button style={{ ...iconBtn, padding: 4 }} onClick={() => remove(item.id)}>
-                <Trash2 size={15} color={COLORS.dim} />
+              <button style={clearBtnStyle} onClick={() => remove(item.id)}>
+                <Trash2 size={15} color={T.error} />
               </button>
             </div>
           ))}

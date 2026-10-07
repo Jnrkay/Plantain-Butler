@@ -2,6 +2,7 @@ import React from 'react';
 import { COLORS_CHART } from '../lib/constants';
 import { fmt, monthKey, monthLabel } from '../lib/utils';
 import { tooltipS } from '../lib/styles';
+import { T, monoLabel } from '../lib/theme';
 import { Card, Empty } from './shared';
 import { BarChart3 } from 'lucide-react';
 import {
@@ -9,12 +10,6 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, AreaChart, Area,
 } from 'recharts';
-
-const COLORS = {
-  bg: '#0f1117', surface: '#161822', surface2: '#1a1d2e',
-  border: '#1e2030', text: '#e2e8f0', muted: '#94a3b8',
-  dim: '#64748b', accent: '#06b6d4',
-};
 
 export default function AnalyticsPage({ transactions, mobile }) {
   // Monthly trend — last 6 months
@@ -54,19 +49,13 @@ export default function AnalyticsPage({ transactions, mobile }) {
     return <Empty icon={BarChart3} message="No data yet" />;
   }
 
-  const gridStyle = {
-    display: 'grid',
-    gridTemplateColumns: mobile ? '1fr' : '1fr 1fr',
-    gap: 16,
-  };
-
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
     return (
       <div style={tooltipS}>
-        <div style={{ color: COLORS.text, fontWeight: 600, marginBottom: 4 }}>{label}</div>
+        <div style={{ color: T.warm, fontWeight: 600, marginBottom: 4 }}>{label}</div>
         {payload.map((p, i) => (
-          <div key={i} style={{ color: p.color || COLORS.accent }}>
+          <div key={i} style={{ color: p.color || T.amber }}>
             {fmt(p.value)}
           </div>
         ))}
@@ -78,93 +67,93 @@ export default function AnalyticsPage({ transactions, mobile }) {
     if (!active || !payload?.length) return null;
     return (
       <div style={tooltipS}>
-        <div style={{ color: COLORS.text, fontWeight: 600 }}>{payload[0].name}</div>
-        <div style={{ color: COLORS.accent }}>{fmt(payload[0].value)}</div>
+        <div style={{ color: T.warm, fontWeight: 600 }}>{payload[0].name}</div>
+        <div style={{ color: T.amber }}>{fmt(payload[0].value)}</div>
       </div>
     );
   };
 
   return (
-    <div style={gridStyle}>
-      {/* Monthly Trend — spans 2 cols on desktop */}
-      <Card style={{ gridColumn: mobile ? undefined : '1 / -1' }}>
-        <h3 style={{ margin: '0 0 16px', color: COLORS.text, fontSize: 15, fontWeight: 600 }}>
-          Monthly Trend
-        </h3>
-        <ResponsiveContainer width="100%" height={240}>
-          <AreaChart data={monthlyTrend}>
-            <defs>
-              <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={COLORS.accent} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={COLORS.accent} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-            <XAxis dataKey="month" tick={{ fill: COLORS.dim, fontSize: 12 }} axisLine={false} tickLine={false} />
-            <YAxis tickFormatter={v => `₵${v}`} tick={{ fill: COLORS.dim, fontSize: 12 }} axisLine={false} tickLine={false} />
-            <Tooltip content={<CustomTooltip />} />
-            <Area
-              type="monotone"
-              dataKey="total"
-              stroke={COLORS.accent}
-              strokeWidth={2}
-              fill="url(#cg)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </Card>
+    <div style={{ padding: mobile ? '20px 16px' : '32px 40px', maxWidth: 800, margin: '0 auto' }}>
+      <div style={{ marginBottom: 24 }}>
+        <span style={{ ...monoLabel, display: 'block', marginBottom: 4 }}>Overview</span>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: T.semibold, color: T.text, fontFamily: T.fontSans }}>
+          Analytics
+        </h2>
+      </div>
 
-      {/* By Category */}
-      <Card>
-        <h3 style={{ margin: '0 0 16px', color: COLORS.text, fontSize: 15, fontWeight: 600 }}>
-          By Category
-        </h3>
-        <ResponsiveContainer width="100%" height={260}>
-          <PieChart>
-            <Pie
-              data={categoryData}
-              cx="50%"
-              cy="50%"
-              outerRadius={80}
-              dataKey="value"
-              stroke="none"
-            >
-              {categoryData.map((_, i) => (
-                <Cell key={i} fill={COLORS_CHART[i % COLORS_CHART.length]} />
-              ))}
-            </Pie>
-            <Tooltip content={<PieTooltip />} />
-          </PieChart>
-        </ResponsiveContainer>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-          {categoryData.map((c, i) => (
-            <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: COLORS.muted }}>
-              <span style={{
-                width: 10, height: 10, borderRadius: 3,
-                backgroundColor: COLORS_CHART[i % COLORS_CHART.length],
-                display: 'inline-block',
-              }} />
-              {c.name}
-            </div>
-          ))}
-        </div>
-      </Card>
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+        {/* Monthly Trend — spans 2 cols on desktop */}
+        <Card title="Monthly Trend" style={{ gridColumn: mobile ? undefined : '1 / -1' }}>
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={monthlyTrend}>
+              <defs>
+                <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={T.teal} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={T.teal} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
+              <XAxis dataKey="month" tick={{ fill: T.textLight, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v => `₵${v}`} tick={{ fill: T.textLight, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="total"
+                stroke={T.teal}
+                strokeWidth={2}
+                fill="url(#tealGrad)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Card>
 
-      {/* By Store */}
-      <Card>
-        <h3 style={{ margin: '0 0 16px', color: COLORS.text, fontSize: 15, fontWeight: 600 }}>
-          By Store
-        </h3>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={storeData} layout="vertical">
-            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} horizontal={false} />
-            <XAxis type="number" tickFormatter={v => `₵${v}`} tick={{ fill: COLORS.dim, fontSize: 12 }} axisLine={false} tickLine={false} />
-            <YAxis type="category" dataKey="name" tick={{ fill: COLORS.muted, fontSize: 12 }} axisLine={false} tickLine={false} width={90} />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="value" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
+        {/* By Category */}
+        <Card title="By Category">
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie
+                data={categoryData}
+                cx="50%"
+                cy="50%"
+                outerRadius={80}
+                dataKey="value"
+                stroke="none"
+              >
+                {categoryData.map((_, i) => (
+                  <Cell key={i} fill={COLORS_CHART[i % COLORS_CHART.length]} />
+                ))}
+              </Pie>
+              <Tooltip content={<PieTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+            {categoryData.map((c, i) => (
+              <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.textMuted }}>
+                <span style={{
+                  width: 10, height: 10, borderRadius: 3,
+                  backgroundColor: COLORS_CHART[i % COLORS_CHART.length],
+                  display: 'inline-block',
+                }} />
+                {c.name}
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* By Store */}
+        <Card title="By Store">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={storeData} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} horizontal={false} />
+              <XAxis type="number" tickFormatter={v => `₵${v}`} tick={{ fill: T.textLight, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" tick={{ fill: T.textMuted, fontSize: 12 }} axisLine={false} tickLine={false} width={90} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="value" fill={T.amber} radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
     </div>
   );
 }

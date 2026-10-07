@@ -3,18 +3,8 @@ import { Search, Plus, Edit3, Trash2, Check, X } from 'lucide-react';
 import { CATEGORIES, STOCK_STATUS } from '../lib/constants';
 import { uid, today, fmt } from '../lib/utils';
 import { inputStyle, inputSm, labelStyle, btnStyle, btnPrimary, iconBtn } from '../lib/styles';
+import { T, monoLabel } from '../lib/theme';
 import { Empty } from './shared';
-
-const theme = {
-  bg: '#0f1117',
-  surface: '#161822',
-  surface2: '#1a1d2e',
-  border: '#1e2030',
-  text: '#e2e8f0',
-  muted: '#94a3b8',
-  dim: '#64748b',
-  accent: '#06b6d4',
-};
 
 const defaultNewItem = { name: '', qty: 1, category: 'Other', status: 'high' };
 
@@ -27,10 +17,11 @@ function statusBadge(status) {
     padding: '2px 10px',
     borderRadius: 9999,
     fontSize: 12,
-    fontWeight: 500,
+    fontWeight: T.medium,
     cursor: 'pointer',
     userSelect: 'none',
     whiteSpace: 'nowrap',
+    fontFamily: T.fontSans,
   };
 }
 
@@ -138,10 +129,10 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
           </select>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button style={{ ...iconBtn, color: '#22c55e' }} onClick={onSave}>
+          <button style={{ ...iconBtn, color: T.success }} onClick={onSave}>
             <Check size={16} />
           </button>
-          <button style={{ ...iconBtn, color: theme.dim }} onClick={onCancel}>
+          <button style={{ ...iconBtn, color: T.textLight }} onClick={onCancel}>
             <X size={16} />
           </button>
         </div>
@@ -152,13 +143,16 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
   /* ---- MOBILE LAYOUT ---- */
   if (mobile) {
     return (
-      <div>
+      <div style={{ padding: '20px 16px', maxWidth: 800, margin: '0 auto' }}>
+        {/* Page title */}
+        <h2 style={{ ...monoLabel, fontSize: 11, marginBottom: 20, marginTop: 0 }}>Inventory</h2>
+
         {/* Search + Add */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <div style={{ position: 'relative', flex: 1 }}>
             <Search
               size={16}
-              style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: theme.dim }}
+              style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: T.textLight }}
             />
             <input
               style={{ ...inputStyle, paddingLeft: 32, width: '100%', boxSizing: 'border-box' }}
@@ -177,7 +171,14 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
 
         {/* Add form */}
         {adding && (
-          <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12, marginBottom: 12 }}>
+          <div style={{
+            background: T.surfaceCard,
+            border: `1px solid ${T.borderLight}`,
+            borderRadius: T.radiusMd,
+            padding: 12,
+            marginBottom: 12,
+            boxShadow: T.shadowSm,
+          }}>
             {renderFormFields(newItem, setNewItem, addItem, () => setAdding(false))}
           </div>
         )}
@@ -190,11 +191,12 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
             <div
               key={item.id}
               style={{
-                background: theme.surface,
-                border: `1px solid ${theme.border}`,
-                borderRadius: 10,
+                background: T.surfaceCard,
+                border: `1px solid ${T.borderLight}`,
+                borderRadius: T.radiusMd,
                 padding: 12,
                 marginBottom: 8,
+                boxShadow: T.shadowSm,
               }}
             >
               {editing === item.id ? (
@@ -202,24 +204,26 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: theme.text, fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+                    <div style={{ color: T.text, fontWeight: T.semibold, fontSize: 14, marginBottom: 4, fontFamily: T.fontSans }}>
                       {item.name}
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span
                         style={{
-                          background: `${theme.accent}18`,
-                          color: theme.accent,
+                          background: T.teal,
+                          color: T.warm,
                           fontSize: 11,
                           padding: '2px 8px',
                           borderRadius: 6,
+                          fontFamily: T.fontSans,
+                          fontWeight: T.medium,
                         }}
                       >
                         {item.category}
                       </span>
-                      <span style={{ color: theme.muted, fontSize: 12 }}>Qty: {item.qty}</span>
+                      <span style={{ color: T.textMuted, fontSize: 12, fontFamily: T.fontSans }}>Qty: {item.qty}</span>
                       {item.lastPrice > 0 && (
-                        <span style={{ color: theme.dim, fontSize: 12 }}>{fmt(item.lastPrice)}</span>
+                        <span style={{ color: T.textLight, fontSize: 12, fontFamily: T.fontSans }}>{fmt(item.lastPrice)}</span>
                       )}
                     </div>
                   </div>
@@ -230,7 +234,7 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
                     <button style={iconBtn} onClick={() => startEdit(item)}>
                       <Edit3 size={14} />
                     </button>
-                    <button style={{ ...iconBtn, color: '#ef4444' }} onClick={() => deleteItem(item.id)}>
+                    <button style={{ ...iconBtn, color: T.error }} onClick={() => deleteItem(item.id)}>
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -247,13 +251,16 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
   const colTemplate = '2fr .7fr 1.2fr 1fr 1fr 80px';
 
   return (
-    <div>
+    <div style={{ padding: '32px 40px', maxWidth: 800, margin: '0 auto' }}>
+      {/* Page title */}
+      <h2 style={{ ...monoLabel, fontSize: 11, marginBottom: 20, marginTop: 0 }}>Inventory</h2>
+
       {/* Search + Add */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <div style={{ position: 'relative', flex: 1 }}>
           <Search
             size={16}
-            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: theme.dim }}
+            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: T.textLight }}
           />
           <input
             style={{ ...inputStyle, paddingLeft: 32, width: '100%', boxSizing: 'border-box' }}
@@ -272,7 +279,14 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
 
       {/* Add form */}
       {adding && (
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12, marginBottom: 12 }}>
+        <div style={{
+          background: T.surfaceCard,
+          border: `1px solid ${T.borderLight}`,
+          borderRadius: T.radiusMd,
+          padding: 12,
+          marginBottom: 12,
+          boxShadow: T.shadowSm,
+        }}>
           {renderFormFields(newItem, setNewItem, addItem, () => setAdding(false))}
         </div>
       )}
@@ -281,19 +295,23 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
       {filtered.length === 0 ? (
         <Empty message="No items found" />
       ) : (
-        <div style={{ borderRadius: 10, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+        <div style={{
+          borderRadius: T.radiusMd,
+          overflow: 'hidden',
+          border: `1px solid ${T.borderLight}`,
+          background: T.surfaceCard,
+          boxShadow: T.shadowSm,
+        }}>
           {/* Header */}
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: colTemplate,
-              background: theme.surface2,
+              background: T.surface,
               padding: '10px 14px',
-              fontSize: 12,
-              fontWeight: 600,
-              color: theme.muted,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+              ...monoLabel,
+              fontSize: 10,
+              color: T.textLight,
             }}
           >
             <span>Item</span>
@@ -313,9 +331,10 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
                 gridTemplateColumns: colTemplate,
                 padding: '10px 14px',
                 alignItems: 'center',
-                borderTop: `1px solid ${theme.border}`,
-                background: theme.surface,
+                borderTop: `1px solid ${T.borderLight}`,
+                background: T.surfaceCard,
                 fontSize: 13,
+                fontFamily: T.fontSans,
               }}
             >
               {editing === item.id ? (
@@ -350,30 +369,31 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
                     <option value="medium">Running Low</option>
                     <option value="low">Out of Stock</option>
                   </select>
-                  <span style={{ color: theme.dim, fontSize: 12 }}>
+                  <span style={{ color: T.textLight, fontSize: 12 }}>
                     {item.lastPrice > 0 ? fmt(item.lastPrice) : '—'}
                   </span>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <button style={{ ...iconBtn, color: '#22c55e' }} onClick={saveEdit}>
+                    <button style={{ ...iconBtn, color: T.success }} onClick={saveEdit}>
                       <Check size={14} />
                     </button>
-                    <button style={{ ...iconBtn, color: theme.dim }} onClick={cancelEdit}>
+                    <button style={{ ...iconBtn, color: T.textLight }} onClick={cancelEdit}>
                       <X size={14} />
                     </button>
                   </div>
                 </>
               ) : (
                 <>
-                  <span style={{ color: theme.text, fontWeight: 500 }}>{item.name}</span>
-                  <span style={{ color: theme.muted }}>{item.qty}</span>
+                  <span style={{ color: T.text, fontWeight: T.medium }}>{item.name}</span>
+                  <span style={{ color: T.textMuted }}>{item.qty}</span>
                   <span>
                     <span
                       style={{
-                        background: `${theme.accent}18`,
-                        color: theme.accent,
+                        background: T.teal,
+                        color: T.warm,
                         fontSize: 11,
                         padding: '2px 8px',
                         borderRadius: 6,
+                        fontWeight: T.medium,
                       }}
                     >
                       {item.category}
@@ -384,14 +404,14 @@ export default function InventoryPage({ inventory, saveInv, mobile }) {
                       {statusLabels[item.status]}
                     </span>
                   </span>
-                  <span style={{ color: theme.muted }}>
+                  <span style={{ color: T.textMuted }}>
                     {item.lastPrice > 0 ? fmt(item.lastPrice) : '—'}
                   </span>
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button style={iconBtn} onClick={() => startEdit(item)}>
                       <Edit3 size={14} />
                     </button>
-                    <button style={{ ...iconBtn, color: '#ef4444' }} onClick={() => deleteItem(item.id)}>
+                    <button style={{ ...iconBtn, color: T.error }} onClick={() => deleteItem(item.id)}>
                       <Trash2 size={14} />
                     </button>
                   </div>

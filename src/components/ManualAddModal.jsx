@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import { CATEGORIES } from '../lib/constants'
 import { today } from '../lib/utils'
+import { T } from '../lib/theme'
 import { inputStyle, inputSm, labelStyle, btnStyle, btnPrimary, iconBtn } from '../lib/styles'
 import { ModalWrapper } from './shared'
 
@@ -82,19 +83,19 @@ export default function ManualAddModal({ onClose, addTransaction, profile, mobil
                     {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
-                <button onClick={() => removeItem(i)} disabled={items.length <= 1} style={{ ...iconBtn, opacity: items.length <= 1 ? 0.3 : 1, alignSelf: 'center' }}>
+                <button onClick={() => removeItem(i)} disabled={items.length <= 1} style={{ ...iconBtn, color: items.length <= 1 ? T.textLight : T.error, opacity: items.length <= 1 ? 0.3 : 1, alignSelf: 'center' }}>
                   <X size={16} />
                 </button>
               </div>
             ))}
           </div>
-          <button onClick={addRow} style={{ ...btnStyle, background: 'none', color: '#06b6d4', padding: '6px 0', fontSize: 12, marginTop: 6 }}>
+          <button onClick={addRow} style={{ ...btnStyle, background: 'none', boxShadow: 'none', color: T.teal, padding: '6px 0', fontSize: 12, marginTop: 6, fontFamily: T.fontSans }}>
             + Add row
           </button>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-          <button onClick={onClose} style={{ ...btnStyle, background: '#1e2030', color: '#94a3b8' }}>Cancel</button>
+          <button onClick={onClose} style={btnStyle}>Cancel</button>
           <button onClick={handleSubmit} style={btnPrimary}>Add Items</button>
         </div>
       </div>

@@ -1,33 +1,37 @@
+import { T } from './theme'
+
 export const inputStyle = {
-  background: '#1e2030', border: '1px solid #2a2d3e', borderRadius: 8,
-  padding: '10px 14px', color: '#e2e8f0', fontSize: 13, outline: 'none',
-  fontFamily: 'system-ui', width: '100%', boxSizing: 'border-box',
+  background: '#fff', border: `1px solid ${T.border}`, borderRadius: T.radiusSm,
+  padding: '10px 14px', color: T.text, fontSize: 13, outline: 'none',
+  fontFamily: T.fontSans, width: '100%', boxSizing: 'border-box',
 }
 
 export const inputSm = { ...inputStyle, padding: '7px 10px', fontSize: 12 }
 
 export const labelStyle = {
-  display: 'block', fontSize: 11, color: '#64748b', marginBottom: 3, fontWeight: 600,
+  display: 'block', fontSize: 11, color: T.textLight, marginBottom: 3, fontWeight: T.semibold,
+  fontFamily: T.fontMono, letterSpacing: '0.4px', textTransform: 'uppercase',
 }
 
 export const btnStyle = {
-  border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 13,
-  cursor: 'pointer', fontWeight: 600, fontFamily: 'system-ui',
+  border: 'none', borderRadius: T.radiusSm, padding: '10px 20px', fontSize: 13,
+  cursor: 'pointer', fontWeight: T.semibold, fontFamily: T.fontSans,
+  background: T.surfaceCard, color: T.text, boxShadow: T.shadowSm,
 }
 
-export const btnPrimary = { ...btnStyle, background: '#06b6d4', color: '#0f1117' }
+export const btnPrimary = { ...btnStyle, background: T.accent, color: T.accentText }
 
 export const chipStyle = {
   border: 'none', borderRadius: 20, padding: '8px 14px', fontSize: 13,
-  cursor: 'pointer', fontFamily: 'system-ui', fontWeight: 500,
+  cursor: 'pointer', fontFamily: T.fontSans, fontWeight: T.medium,
 }
 
 export const iconBtn = {
   background: 'none', border: 'none', cursor: 'pointer', padding: 4,
-  display: 'flex', alignItems: 'center', flexShrink: 0, color: '#94a3b8',
+  display: 'flex', alignItems: 'center', flexShrink: 0, color: T.textMuted,
 }
 
 export const tooltipS = {
-  background: '#1e2030', border: '1px solid #2a2d3e', borderRadius: 8,
-  color: '#e2e8f0', fontSize: 12,
+  background: T.surfaceDeep, border: `1px solid ${T.border}`, borderRadius: T.radiusSm,
+  color: T.warm, fontSize: 12,
 }

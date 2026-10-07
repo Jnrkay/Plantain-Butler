@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CATEGORIES, HOUSEHOLD_TYPES, DEFAULT_PROFILE } from '../lib/constants'
 import { inputStyle, inputSm, labelStyle, btnStyle, btnPrimary, chipStyle } from '../lib/styles'
+import { T, monoLabel } from '../lib/theme'
 import { Card } from './shared'
 import { TagInput } from './shared'
 import { save, exportAllData, importData } from '../lib/storage'
@@ -69,23 +70,23 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
     }
   }
 
-  const clearBtnStyle = {
+  const clearBtnS = {
     ...btnStyle,
-    background: '#1e2030',
-    color: '#94a3b8',
+    background: `${T.error}15`,
+    color: T.error,
+    border: `1px solid ${T.error}30`,
     padding: '8px 14px',
     fontSize: 12,
   }
 
   const dangerBtn = {
-    ...clearBtnStyle,
-    background: '#331111',
-    color: '#ef4444',
+    ...clearBtnS,
+    background: `${T.error}20`,
   }
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: mobile ? '16px 12px' : '24px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <h2 style={{ margin: 0, fontSize: mobile ? 18 : 20, color: '#e2e8f0' }}>Settings</h2>
+    <div style={{ maxWidth: 800, margin: '0 auto', padding: mobile ? '20px 16px' : '32px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <p style={{ ...monoLabel, margin: 0 }}>SETTINGS</p>
 
       {/* Household Profile */}
       <Card title="Household Profile">
@@ -99,7 +100,12 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
                   if (t === 'Single person') { u.adults = 1; u.kids = 0 }
                   else if (t === 'Married couple') { u.adults = 2; u.kids = 0 }
                   setP(u)
-                }} style={{ ...chipStyle, background: p.householdType === t ? '#06b6d4' : '#1e2030', color: p.householdType === t ? '#0f1117' : '#e2e8f0' }}>{t}</button>
+                }} style={{
+                  ...chipStyle,
+                  background: p.householdType === t ? T.amber : T.surfaceCard,
+                  color: p.householdType === t ? T.accentText : T.textMuted,
+                  border: p.householdType === t ? 'none' : `1px solid ${T.borderLight}`,
+                }}>{t}</button>
               ))}
             </div>
           </div>
@@ -122,7 +128,12 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
             <label style={labelStyle}>Shopping frequency</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {['Daily', 'Every few days', 'Weekly', 'Bi-weekly', 'Monthly', 'Irregular / As needed'].map(f => (
-                <button key={f} onClick={() => setP({ ...p, shopFrequency: f, shopFreqCustom: f === 'Irregular / As needed' ? p.shopFreqCustom : '' })} style={{ ...chipStyle, background: p.shopFrequency === f ? '#06b6d4' : '#1e2030', color: p.shopFrequency === f ? '#0f1117' : '#e2e8f0' }}>{f}</button>
+                <button key={f} onClick={() => setP({ ...p, shopFrequency: f, shopFreqCustom: f === 'Irregular / As needed' ? p.shopFreqCustom : '' })} style={{
+                  ...chipStyle,
+                  background: p.shopFrequency === f ? T.amber : T.surfaceCard,
+                  color: p.shopFrequency === f ? T.accentText : T.textMuted,
+                  border: p.shopFrequency === f ? 'none' : `1px solid ${T.borderLight}`,
+                }}>{f}</button>
               ))}
             </div>
           </div>
@@ -158,7 +169,12 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
                     ? p.topCategories.filter(x => x !== c)
                     : [...(p.topCategories || []), c]
                   setP({ ...p, topCategories: tc })
-                }} style={{ ...chipStyle, background: p.topCategories?.includes(c) ? '#06b6d4' : '#1e2030', color: p.topCategories?.includes(c) ? '#0f1117' : '#e2e8f0' }}>{c}</button>
+                }} style={{
+                  ...chipStyle,
+                  background: p.topCategories?.includes(c) ? T.amber : T.surfaceCard,
+                  color: p.topCategories?.includes(c) ? T.accentText : T.textMuted,
+                  border: p.topCategories?.includes(c) ? 'none' : `1px solid ${T.borderLight}`,
+                }}>{c}</button>
               ))}
             </div>
           </div>
@@ -174,7 +190,7 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
         <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 10 }}>
           {CATEGORIES.map(c => (
             <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <label style={{ fontSize: 12, color: '#94a3b8', minWidth: mobile ? 110 : 130, flexShrink: 0 }}>{c}</label>
+              <label style={{ fontSize: 12, color: T.textMuted, fontFamily: T.fontSans, minWidth: mobile ? 110 : 130, flexShrink: 0 }}>{c}</label>
               <input type="number" min={0} value={budgets[c] || ''} onChange={e => saveBudgets({ ...budgets, [c]: +e.target.value })} style={{ ...inputSm, width: '100%' }} placeholder="0" />
             </div>
           ))}
@@ -185,40 +201,48 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
       <Card title="Data Management">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <button onClick={handleExport} style={{ ...btnStyle, background: '#1e2030', color: '#06b6d4', padding: '8px 14px', fontSize: 12 }}>
+            <button onClick={handleExport} style={{ ...btnStyle, background: T.teal, color: T.warm, padding: '8px 14px', fontSize: 12, borderRadius: T.radiusMd }}>
               Export Backup
             </button>
-            <label style={{ ...btnStyle, background: '#1e2030', color: '#06b6d4', padding: '8px 14px', fontSize: 12, display: 'inline-flex', alignItems: 'center' }}>
+            <label style={{ ...btnStyle, background: T.surfaceCard, color: T.text, border: `1px solid ${T.borderLight}`, padding: '8px 14px', fontSize: 12, borderRadius: T.radiusMd, display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
               Import File
               <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
             </label>
-            <button onClick={() => setShowPasteImport(!showPasteImport)} style={{ ...btnStyle, background: showPasteImport ? '#06b6d4' : '#1e2030', color: showPasteImport ? '#0f1117' : '#06b6d4', padding: '8px 14px', fontSize: 12 }}>
+            <button onClick={() => setShowPasteImport(!showPasteImport)} style={{
+              ...btnStyle,
+              background: showPasteImport ? T.teal : T.surfaceCard,
+              color: showPasteImport ? T.warm : T.text,
+              border: showPasteImport ? 'none' : `1px solid ${T.borderLight}`,
+              padding: '8px 14px',
+              fontSize: 12,
+              borderRadius: T.radiusMd,
+            }}>
               Paste Import
             </button>
           </div>
 
           {showPasteImport && (
-            <div style={{ background: '#1a1d2e', borderRadius: 8, padding: 12, marginTop: 4 }}>
-              <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 8px' }}>Paste your exported JSON data from the artifact below:</p>
+            <div style={{ background: T.surfaceCard, border: `1px solid ${T.borderLight}`, borderRadius: T.radiusMd, padding: 12, marginTop: 4 }}>
+              <p style={{ fontSize: 11, color: T.textMuted, margin: '0 0 8px', fontFamily: T.fontSans }}>Paste your exported JSON data from the artifact below:</p>
               <textarea
                 value={pasteText}
                 onChange={e => setPasteText(e.target.value)}
                 placeholder='Paste JSON data here...'
-                style={{ ...inputStyle, height: 100, fontSize: 11, fontFamily: 'monospace', resize: 'vertical' }}
+                style={{ ...inputStyle, height: 100, fontSize: 11, fontFamily: T.fontMono, resize: 'vertical' }}
               />
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={handlePasteImport} disabled={!pasteText.trim()} style={{ ...btnPrimary, padding: '6px 14px', fontSize: 12, opacity: pasteText.trim() ? 1 : 0.4 }}>
                   Import Data
                 </button>
-                <button onClick={() => { setShowPasteImport(false); setPasteText('') }} style={{ ...btnStyle, background: '#1e2030', color: '#94a3b8', padding: '6px 14px', fontSize: 12 }}>
+                <button onClick={() => { setShowPasteImport(false); setPasteText('') }} style={{ ...btnStyle, background: T.surfaceCard, color: T.textMuted, border: `1px solid ${T.borderLight}`, padding: '6px 14px', fontSize: 12 }}>
                   Cancel
                 </button>
               </div>
             </div>
           )}
 
-          <div style={{ borderTop: '1px solid #1e2030', paddingTop: 12, marginTop: 4 }}>
-            <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 10px' }}>Clear data</p>
+          <div style={{ borderTop: `1px solid ${T.borderLight}`, paddingTop: 12, marginTop: 4 }}>
+            <p style={{ ...monoLabel, margin: '0 0 10px' }}>Clear data</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {[
                 { key: 'inv', label: 'Inventory', action: () => saveInv([]) },
@@ -226,23 +250,23 @@ export default function SettingsPage({ profile, saveProfile, budgets, saveBudget
                 { key: 'sl', label: 'Shopping List', action: () => saveSL([]) },
               ].map(({ key, label, action }) => (
                 confirming === key ? (
-                  <span key={key} style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 12, color: '#94a3b8' }}>
+                  <span key={key} style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 12, color: T.textMuted, fontFamily: T.fontSans }}>
                     Clear {label}?
-                    <button onClick={() => { action(); setConfirming(null) }} style={{ ...clearBtnStyle, padding: '4px 10px', color: '#f59e0b' }}>Yes</button>
-                    <button onClick={() => setConfirming(null)} style={{ ...clearBtnStyle, padding: '4px 10px' }}>No</button>
+                    <button onClick={() => { action(); setConfirming(null) }} style={{ ...clearBtnS, padding: '4px 10px', color: T.warning }}>Yes</button>
+                    <button onClick={() => setConfirming(null)} style={{ ...clearBtnS, padding: '4px 10px' }}>No</button>
                   </span>
                 ) : (
-                  <button key={key} onClick={() => setConfirming(key)} style={clearBtnStyle}>
+                  <button key={key} onClick={() => setConfirming(key)} style={clearBtnS}>
                     Clear {label}
                   </button>
                 )
               ))}
 
               {confirming === 'all' ? (
-                <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 12, color: '#ef4444' }}>
+                <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 12, color: T.error, fontFamily: T.fontSans }}>
                   Clear everything?
                   <button onClick={() => { saveInv([]); saveTx([]); saveSL([]); saveBudgets({}); saveProfile(DEFAULT_PROFILE); setConfirming(null) }} style={{ ...dangerBtn, padding: '4px 10px' }}>Yes</button>
-                  <button onClick={() => setConfirming(null)} style={{ ...clearBtnStyle, padding: '4px 10px' }}>No</button>
+                  <button onClick={() => setConfirming(null)} style={{ ...clearBtnS, padding: '4px 10px' }}>No</button>
                 </span>
               ) : (
                 <button onClick={() => setConfirming('all')} style={dangerBtn}>

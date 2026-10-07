@@ -3,18 +3,8 @@ import { Search, Trash2 } from 'lucide-react'
 import { CATEGORIES } from '../lib/constants'
 import { fmt } from '../lib/utils'
 import { inputStyle, iconBtn } from '../lib/styles'
+import { T, monoLabel } from '../lib/theme'
 import { Empty } from './shared'
-
-const colors = {
-  bg: '#0f1117',
-  surface: '#161822',
-  surface2: '#1a1d2e',
-  border: '#1e2030',
-  text: '#e2e8f0',
-  muted: '#94a3b8',
-  dim: '#64748b',
-  accent: '#06b6d4',
-}
 
 const MAX_VISIBLE = 50
 
@@ -32,9 +22,16 @@ export default function TransactionsPage({ transactions, saveTx, mobile }) {
   const visible = filtered.slice(0, MAX_VISIBLE)
 
   return (
-    <div>
-      <h2 style={{ margin: '0 0 16px', color: colors.text, fontSize: 20, fontWeight: 700 }}>
-        Transactions
+    <div style={{ padding: mobile ? '20px 16px' : '32px 40px', maxWidth: 800, margin: '0 auto' }}>
+      <div style={{ ...monoLabel, marginBottom: 4 }}>Transactions</div>
+      <h2 style={{
+        margin: '0 0 20px',
+        color: T.text,
+        fontSize: 22,
+        fontWeight: T.semibold,
+        fontFamily: T.fontSans,
+      }}>
+        All Purchases
       </h2>
 
       {/* Filter bar */}
@@ -42,7 +39,7 @@ export default function TransactionsPage({ transactions, saveTx, mobile }) {
         <div style={{ position: 'relative', flex: '1 1 180px' }}>
           <Search
             size={16}
-            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: colors.dim, pointerEvents: 'none' }}
+            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: T.textLight, pointerEvents: 'none' }}
           />
           <input
             placeholder="Search items or stores..."
@@ -68,7 +65,7 @@ export default function TransactionsPage({ transactions, saveTx, mobile }) {
       </div>
 
       {filtered.length > MAX_VISIBLE && (
-        <div style={{ color: colors.muted, fontSize: 13, marginBottom: 12 }}>
+        <div style={{ color: T.textMuted, fontSize: 13, marginBottom: 12, fontFamily: T.fontSans }}>
           Showing {MAX_VISIBLE} of {filtered.length}
         </div>
       )}
@@ -82,9 +79,9 @@ export default function TransactionsPage({ transactions, saveTx, mobile }) {
             <div
               key={t.id}
               style={{
-                background: colors.surface,
-                border: `1px solid ${colors.border}`,
-                borderRadius: 10,
+                background: T.surfaceCard,
+                border: `1px solid ${T.borderLight}`,
+                borderRadius: T.radiusMd,
                 padding: '12px 14px',
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -93,38 +90,38 @@ export default function TransactionsPage({ transactions, saveTx, mobile }) {
               }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: colors.text, fontWeight: 600, fontSize: 15, marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ color: T.text, fontWeight: T.semibold, fontSize: 15, fontFamily: T.fontSans, marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {t.item}
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 13, color: colors.muted }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 13, color: T.textMuted, fontFamily: T.fontSans }}>
                   {t.category && (
                     <span style={{
-                      background: colors.surface2,
-                      border: `1px solid ${colors.border}`,
+                      background: T.teal + '15',
                       borderRadius: 6,
                       padding: '2px 8px',
                       fontSize: 12,
-                      color: colors.muted,
+                      color: T.teal,
+                      fontFamily: T.fontSans,
                     }}>
                       {t.category}
                     </span>
                   )}
                   {t.store && <span>{t.store}</span>}
-                  {t.date && <span style={{ color: colors.dim }}>{t.date}</span>}
+                  {t.date && <span style={{ color: T.textLight }}>{t.date}</span>}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexShrink: 0 }}>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ color: colors.accent, fontWeight: 600, fontSize: 15 }}>
+                  <div style={{ color: T.teal, fontWeight: T.semibold, fontSize: 15, fontFamily: T.fontMono }}>
                     {fmt(t.price)}
                   </div>
                   {t.qty > 1 && (
-                    <div style={{ color: colors.dim, fontSize: 12 }}>x{t.qty}</div>
+                    <div style={{ color: T.textLight, fontSize: 12, fontFamily: T.fontMono }}> x{t.qty}</div>
                   )}
                 </div>
                 <button
                   onClick={() => deleteTx(t.id)}
-                  style={{ ...iconBtn, color: colors.dim, flexShrink: 0 }}
+                  style={{ ...iconBtn, color: T.error, flexShrink: 0 }}
                   title="Delete"
                 >
                   <Trash2 size={15} />
@@ -135,8 +132,8 @@ export default function TransactionsPage({ transactions, saveTx, mobile }) {
         </div>
       ) : (
         /* Desktop table layout */
-        <div style={{ border: `1px solid ${colors.border}`, borderRadius: 10, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+        <div style={{ border: `1px solid ${T.borderLight}`, borderRadius: T.radiusLg, overflow: 'hidden', boxShadow: T.shadowSm }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: T.fontSans }}>
             <colgroup>
               <col style={{ width: '2fr' }} />
               <col style={{ width: '.6fr' }} />
@@ -147,19 +144,20 @@ export default function TransactionsPage({ transactions, saveTx, mobile }) {
               <col style={{ width: 40 }} />
             </colgroup>
             <thead>
-              <tr style={{ background: colors.surface2 }}>
+              <tr style={{ background: 'rgba(18,38,35,0.04)' }}>
                 {['Item', 'Qty', 'Price', 'Category', 'Store', 'Date', ''].map((h, i) => (
                   <th
                     key={i}
                     style={{
                       padding: '10px 12px',
                       textAlign: i === 1 || i === 2 ? 'right' : 'left',
-                      color: colors.muted,
-                      fontSize: 12,
-                      fontWeight: 600,
+                      color: T.textLight,
+                      fontSize: 10,
+                      fontWeight: T.medium,
+                      fontFamily: T.fontMono,
                       textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      borderBottom: `1px solid ${colors.border}`,
+                      letterSpacing: '0.6px',
+                      borderBottom: `1px solid ${T.borderLight}`,
                     }}
                   >
                     {h}
@@ -171,41 +169,40 @@ export default function TransactionsPage({ transactions, saveTx, mobile }) {
               {visible.map(t => (
                 <tr
                   key={t.id}
-                  style={{ borderBottom: `1px solid ${colors.border}` }}
+                  style={{ borderBottom: `1px solid ${T.borderLight}`, background: T.surfaceCard }}
                 >
-                  <td style={{ padding: '10px 12px', color: colors.text, fontWeight: 500, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '10px 12px', color: T.text, fontWeight: T.medium, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {t.item}
                   </td>
-                  <td style={{ padding: '10px 12px', color: colors.muted, fontSize: 14, textAlign: 'right' }}>
+                  <td style={{ padding: '10px 12px', color: T.textMuted, fontSize: 14, textAlign: 'right', fontFamily: T.fontMono }}>
                     {t.qty || 1}
                   </td>
-                  <td style={{ padding: '10px 12px', color: colors.accent, fontWeight: 600, fontSize: 14, textAlign: 'right' }}>
+                  <td style={{ padding: '10px 12px', color: T.teal, fontWeight: T.semibold, fontSize: 14, textAlign: 'right', fontFamily: T.fontMono }}>
                     {fmt(t.price)}
                   </td>
                   <td style={{ padding: '10px 12px', fontSize: 13 }}>
                     {t.category && (
                       <span style={{
-                        background: colors.surface2,
-                        border: `1px solid ${colors.border}`,
+                        background: T.teal + '15',
                         borderRadius: 6,
                         padding: '2px 8px',
-                        color: colors.muted,
+                        color: T.teal,
                         fontSize: 12,
                       }}>
                         {t.category}
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: '10px 12px', color: colors.muted, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '10px 12px', color: T.textMuted, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {t.store}
                   </td>
-                  <td style={{ padding: '10px 12px', color: colors.dim, fontSize: 13 }}>
+                  <td style={{ padding: '10px 12px', color: T.textLight, fontSize: 13 }}>
                     {t.date}
                   </td>
                   <td style={{ padding: '10px 4px', textAlign: 'center' }}>
                     <button
                       onClick={() => deleteTx(t.id)}
-                      style={{ ...iconBtn, color: colors.dim }}
+                      style={{ ...iconBtn, color: T.error }}
                       title="Delete"
                     >
                       <Trash2 size={15} />
