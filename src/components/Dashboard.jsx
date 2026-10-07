@@ -1,253 +1,249 @@
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
-import { AlertTriangle, Upload, Plus, Receipt, Package, DollarSign } from 'lucide-react'
-import { COLORS_CHART } from '../lib/constants'
+import { useMemo } from 'react'
+import { Plus, ArrowRight } from 'lucide-react'
 import { fmt } from '../lib/utils'
 import { T, monoLabel, heroAmount } from '../lib/theme'
-import { btnStyle, tooltipS } from '../lib/styles'
-import { Card, Empty } from './shared'
 
-// Barcode budget visualization — 90 vertical bars
-function BudgetBarcode({ spent, total, mobile }) {
+// Barcode budget visualization — 90 vertical bars with deterministic heights
+function BudgetBarcode({ spent, total }) {
   const bars = 90
   const pct = total > 0 ? Math.min(1, spent / total) : 0
   const filledBars = Math.round(pct * bars)
   const overBudget = spent > total
 
-  return (
-    <div style={{ display: 'flex', gap: 1, height: mobile ? 40 : 56, alignItems: 'flex-end' }}>
-      {Array.from({ length: bars }).map((_, i) => {
-        const filled = i < filledBars
-        return (
-          <div
-            key={i}
-            style={{
-              width: 1,
-              flex: 1,
-              height: `${60 + Math.random() * 40}%`,
-              background: filled
-                ? (overBudget ? T.error : T.deepTeal)
-                : `rgba(18,38,35,0.15)`,
-              borderRadius: 0.5,
-              transition: 'background 0.3s ease',
-            }}
-          />
-        )
-      })}
-    </div>
-  )
-}
+  // Deterministic pseudo-random heights so they don't change on re-render
+  const heights = useMemo(() =>
+    Array.from({ length: bars }, (_, i) => {
+      const seed = Math.sin(i * 127.1 + 311.7) * 43758.5453
+      return 55 + (seed - Math.floor(seed)) * 45
+    }), [bars])
 
-// Stacked CTA card
-function CTACard({ bg, color, title, subtitle, icon: Ic, onClick, style: extraStyle }) {
   return (
-    <button onClick={onClick} style={{
-      background: bg,
-      color,
-      border: 'none',
-      borderRadius: T.radiusXl,
-      padding: '20px 24px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      width: '100%',
-      cursor: 'pointer',
-      fontFamily: T.fontSans,
-      textAlign: 'left',
-      ...extraStyle,
-    }}>
-      <div>
-        <div style={{ fontSize: 16, fontWeight: T.semibold }}>{title}</div>
-        <div style={{ fontSize: 13, opacity: 0.7, marginTop: 2 }}>{subtitle}</div>
-      </div>
-      <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: 10 }}>
-        <Ic size={20} />
-      </div>
-    </button>
+    <div style={{ display: 'flex', gap: 1, height: 40, alignItems: 'flex-end' }}>
+      {heights.map((h, i) => (
+        <div
+          key={i}
+          style={{
+            flex: 1,
+            height: `${h}%`,
+            background: i < filledBars
+              ? (overBudget ? T.error : T.deepTeal)
+              : 'rgba(18,38,35,0.15)',
+            borderRadius: 0.5,
+            transition: 'background 0.3s ease',
+          }}
+        />
+      ))}
+    </div>
   )
 }
 
 export default function Dashboard({ totalSpend, inventory, lowStock, monthTx, transactions, profile, setModal, setPage, mobile }) {
   const budget = profile.monthlyBudget || 0
-  const pct = budget > 0 ? Math.min(100, (totalSpend / budget) * 100) : 0
   const remaining = Math.max(0, budget - totalSpend)
-
-  const catSpend = {}
-  monthTx.forEach(t => {
-    catSpend[t.category || 'Other'] = (catSpend[t.category || 'Other'] || 0) + Number(t.price) * (Number(t.qty) || 1)
-  })
-  const pieData = Object.entries(catSpend).map(([name, value]) => ({ name, value: +value.toFixed(2) })).sort((a, b) => b.value - a.value).slice(0, 6)
-
-  const recent = (transactions || []).slice(0, 5)
 
   // Initials for avatar
   const initials = (profile.name || 'PB').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 
+  // Current month name
+  const monthName = new Date().toLocaleString('en', { month: 'long' }).toUpperCase()
+
+  // Format number without currency prefix (for hero display)
+  const fmtNum = (n) => Number(n || 0).toFixed(2)
+
+  // Shopping list count (low stock items)
+  const shoppingCount = lowStock.length
+  const shoppingEst = lowStock.reduce((sum, item) => sum + Number(item.price || 0), 0)
+  const runningLowCount = lowStock.filter(i => i.status === 'low').length
+
   return (
-    <div style={{ padding: mobile ? '20px 16px' : '32px 40px', maxWidth: 800, margin: '0 auto' }}>
-      {/* Header with avatar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <p style={{ ...monoLabel, margin: 0 }}>YOUR HOUSEHOLD</p>
+    <div style={{ padding: '20px 16px', maxWidth: 800, margin: '0 auto' }}>
+
+      {/* 1. Header row — avatar left, menu right */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div style={{
           width: 36, height: 36, borderRadius: 10,
-          background: T.teal, color: T.warm,
+          background: T.teal, color: T.cream,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: T.fontMono, fontSize: 12, fontWeight: T.medium,
           letterSpacing: '0.5px',
         }}>
           {initials}
         </div>
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          gap: 3, cursor: 'pointer', padding: 4,
+        }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{
+              width: 4, height: 4, borderRadius: '50%',
+              background: T.deepTeal,
+            }} />
+          ))}
+        </div>
       </div>
 
-      {/* Hero Amount */}
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ ...heroAmount, fontSize: mobile ? 48 : 72 }}>{fmt(totalSpend)}</div>
+      {/* 2. Total Spent pill label */}
+      <div style={{ marginBottom: 12 }}>
+        <span style={{
+          display: 'inline-block',
+          background: T.teal,
+          color: T.cream,
+          fontFamily: T.fontMono,
+          fontSize: 10,
+          fontWeight: T.medium,
+          letterSpacing: '0.6px',
+          textTransform: 'uppercase',
+          padding: '4px 10px',
+          borderRadius: T.radiusSm,
+          lineHeight: 1.2,
+        }}>
+          {`TOTAL SPENT · ${monthName}`}
+        </span>
       </div>
 
-      {/* Stats row */}
+      {/* 3. Hero Amount — GHS prefix + large number */}
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{
+          fontFamily: T.fontSans,
+          fontSize: 14,
+          fontWeight: T.regular,
+          color: T.deepTeal,
+          lineHeight: 1,
+        }}>
+          GHS
+        </span>
+        <span style={{
+          ...heroAmount,
+          fontSize: 72,
+        }}>
+          {fmtNum(totalSpend)}
+        </span>
+      </div>
+
+      {/* 4. Stats Row — three columns with dividers */}
       <div style={{
         display: 'flex',
         borderTop: `1px solid ${T.border}`,
         borderBottom: `1px solid ${T.border}`,
-        padding: '12px 0',
+        padding: '14px 0',
         marginBottom: 24,
       }}>
+        {/* In Stock */}
         <div style={{ flex: 1 }}>
-          <div style={{ ...monoLabel, marginBottom: 4 }}>BUDGET</div>
-          <div style={{ fontSize: 16, fontWeight: T.medium, color: T.text }}>{budget > 0 ? fmt(budget) : '—'}</div>
+          <div style={{ ...monoLabel, marginBottom: 6 }}>IN STOCK</div>
+          <div style={{ fontSize: 28, fontWeight: T.medium, color: T.deepTeal, lineHeight: 1 }}>{inventory.length}</div>
+          <div style={{ fontSize: 12, color: T.textLight, marginTop: 4, fontFamily: T.fontSans }}>items tracked</div>
         </div>
+        {/* Low Stock */}
         <div style={{ flex: 1, borderLeft: `1px solid ${T.border}`, paddingLeft: 16 }}>
-          <div style={{ ...monoLabel, marginBottom: 4 }}>REMAINING</div>
-          <div style={{ fontSize: 16, fontWeight: T.medium, color: remaining > 0 ? T.success : T.error }}>{budget > 0 ? fmt(remaining) : '—'}</div>
+          <div style={{ ...monoLabel, marginBottom: 6 }}>LOW STOCK</div>
+          <div style={{ fontSize: 28, fontWeight: T.medium, color: T.deepTeal, lineHeight: 1 }}>{lowStock.length}</div>
+          <div style={{ fontSize: 12, color: T.textLight, marginTop: 4, fontFamily: T.fontSans }}>needs restock</div>
         </div>
+        {/* This Month */}
         <div style={{ flex: 1, borderLeft: `1px solid ${T.border}`, paddingLeft: 16 }}>
-          <div style={{ ...monoLabel, marginBottom: 4 }}>ITEMS</div>
-          <div style={{ fontSize: 16, fontWeight: T.medium, color: T.text }}>{inventory.length}</div>
+          <div style={{ ...monoLabel, marginBottom: 6 }}>THIS MONTH</div>
+          <div style={{ fontSize: 28, fontWeight: T.medium, color: T.deepTeal, lineHeight: 1 }}>{monthTx.length}</div>
+          <div style={{ fontSize: 12, color: T.textLight, marginTop: 4, fontFamily: T.fontSans }}>transactions</div>
         </div>
       </div>
 
-      {/* Budget Barcode */}
+      {/* 5. Budget Section — label row + barcode */}
       {budget > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <BudgetBarcode spent={totalSpend} total={budget} mobile={mobile} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-            <span style={{ ...monoLabel }}>{Math.round(pct)}% USED</span>
-            <span style={{ ...monoLabel }}>{fmt(remaining)} LEFT</span>
-          </div>
-        </div>
-      )}
-
-      {/* Stacked CTAs */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 24 }}>
-        <CTACard
-          bg={T.amber}
-          color={T.deepTeal}
-          title="Quick Add"
-          subtitle="Scan receipt or add manually"
-          icon={Plus}
-          onClick={() => setModal('manual')}
-          style={{ zIndex: 2, position: 'relative', boxShadow: T.shadowMd }}
-        />
-        <CTACard
-          bg={T.teal}
-          color={T.warm}
-          title="Shopping List"
-          subtitle={`${lowStock.length} items to restock`}
-          icon={Receipt}
-          onClick={() => setPage('shopping')}
-          style={{ marginTop: -12, paddingTop: 28, zIndex: 1 }}
-        />
-      </div>
-
-      {/* Low Stock Alert */}
-      {lowStock.length > 0 && (
-        <div style={{
-          background: `${T.warning}12`,
-          border: `1px solid ${T.warning}30`,
-          borderRadius: T.radiusMd,
-          padding: '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 24,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AlertTriangle size={18} style={{ color: T.warning }} />
-            <span style={{ color: T.text, fontSize: 14, fontWeight: T.medium }}>
-              {lowStock.length} item{lowStock.length !== 1 ? 's' : ''} running low
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+            <span style={{ ...monoLabel }}>BUDGET LEFT</span>
+            <span style={{
+              fontFamily: T.fontSans,
+              fontSize: 14,
+              fontWeight: T.regular,
+              color: T.deepTeal,
+            }}>
+              {fmtNum(remaining)} / {fmtNum(budget)}
             </span>
           </div>
-          <button onClick={() => setPage('inventory')} style={{
-            background: `${T.warning}18`,
-            color: T.text,
-            border: `1px solid ${T.warning}30`,
-            borderRadius: 6,
-            padding: '4px 12px',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: T.medium,
-            fontFamily: T.fontSans,
-          }}>
-            View
-          </button>
+          <BudgetBarcode spent={totalSpend} total={budget} />
         </div>
       )}
 
-      {/* Two-Column Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 16 }}>
-        {/* Spending by Category */}
-        <Card title="SPENDING BY CATEGORY">
-          {pieData.length === 0 ? (
-            <Empty msg="No spending data this month" />
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3} dataKey="value">
-                    {pieData.map((_, i) => <Cell key={i} fill={COLORS_CHART[i % COLORS_CHART.length]} />)}
-                  </Pie>
-                  <Tooltip contentStyle={tooltipS} formatter={v => fmt(v)} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginTop: 8 }}>
-                {pieData.map((d, i) => (
-                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.textMuted }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS_CHART[i % COLORS_CHART.length] }} />
-                    {d.name}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </Card>
+      {/* 6 & 7. Stacked CTA Cards — Quick Add on top, Shopping List behind */}
+      <div style={{ position: 'relative', marginBottom: 24 }}>
+        {/* Quick Add card — sits on top */}
+        <button
+          onClick={() => setModal('manual')}
+          style={{
+            display: 'block',
+            width: '100%',
+            background: T.teal,
+            color: T.cream,
+            border: 'none',
+            borderRadius: T.radiusXl,
+            padding: '20px 24px',
+            cursor: 'pointer',
+            fontFamily: T.fontSans,
+            textAlign: 'left',
+            position: 'relative',
+            zIndex: 2,
+            boxShadow: T.shadowMd,
+          }}
+        >
+          {/* Top labels */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>QUICK ADD</span>
+            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>RECEIPT &middot; ITEM</span>
+          </div>
+          {/* Large + icon centered */}
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '12px 0' }}>
+            <Plus size={36} strokeWidth={1.5} color={T.cream} />
+          </div>
+        </button>
 
-        {/* Recent Transactions */}
-        <Card title="RECENT TRANSACTIONS">
-          {recent.length === 0 ? (
-            <Empty msg="No transactions yet" />
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {recent.map((t, i) => (
-                <div key={i} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '8px 0',
-                  borderBottom: i < recent.length - 1 ? `1px solid ${T.borderLight}` : 'none',
-                }}>
-                  <div>
-                    <div style={{ fontSize: 14, color: T.text, fontWeight: T.medium }}>{t.item}</div>
-                    <div style={{ fontSize: 12, color: T.textLight }}>{t.store}{t.date ? ` · ${t.date}` : ''}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 14, color: T.text, fontWeight: T.semibold }}>{fmt(Number(t.price) * (Number(t.qty) || 1))}</div>
-                    {Number(t.qty) > 1 && <div style={{ fontSize: 11, color: T.textLight }}>x{t.qty}</div>}
-                  </div>
-                </div>
-              ))}
+        {/* Shopping List card — partially behind Quick Add */}
+        <button
+          onClick={() => setPage('shopping')}
+          style={{
+            display: 'block',
+            width: '100%',
+            background: T.deepTeal,
+            color: T.cream,
+            border: 'none',
+            borderRadius: T.radiusXl,
+            padding: '20px 24px',
+            paddingTop: 32,
+            marginTop: -14,
+            cursor: 'pointer',
+            fontFamily: T.fontSans,
+            textAlign: 'left',
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
+          {/* Top labels */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>SHOPPING LIST</span>
+            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>NEXT TRIP</span>
+          </div>
+          {/* Content row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: T.medium, color: T.cream, marginBottom: 4 }}>
+                {shoppingCount} item{shoppingCount !== 1 ? 's' : ''} to buy
+              </div>
+              <div style={{ fontSize: 13, color: T.textOnTealMuted }}>
+                Est. GHS {fmtNum(shoppingEst)} {runningLowCount > 0 ? `· ${runningLowCount} running low` : ''}
+              </div>
             </div>
-          )}
-        </Card>
+            <div style={{
+              width: 36, height: 36,
+              background: T.amber,
+              borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <ArrowRight size={18} color={T.deepTeal} />
+            </div>
+          </div>
+        </button>
       </div>
     </div>
   )

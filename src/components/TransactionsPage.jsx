@@ -1,217 +1,343 @@
-import { useState } from 'react'
-import { Search, Trash2 } from 'lucide-react'
-import { CATEGORIES } from '../lib/constants'
-import { fmt } from '../lib/utils'
-import { inputStyle, iconBtn } from '../lib/styles'
+import { useState, useMemo } from 'react'
+import { MoreHorizontal, Plus } from 'lucide-react'
 import { T, monoLabel } from '../lib/theme'
 import { Empty } from './shared'
 
-const MAX_VISIBLE = 50
+const CATEGORY_ICONS = {
+  Beverages: '☕',
+  Toiletries: '🧴',
+  Proteins: '🥩',
+  Grains: '🌾',
+  Cleaning: '🧹',
+  Produce: '🥬',
+  Dairy: '🧀',
+  Snacks: '🍪',
+  'Cooking Essentials': '🍳',
+  Other: '📦',
+}
 
-export default function TransactionsPage({ transactions, saveTx, mobile }) {
-  const [filter, setFilter] = useState({ search: '', category: '' })
+function formatDateGroup(dateStr) {
+  if (!dateStr) return 'NO DATE'
+  const d = new Date(dateStr + 'T00:00:00')
+  const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+  const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+  return `${days[d.getDay()]} · ${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]}`
+}
 
-  const filtered = transactions.filter(t => {
-    if (filter.search && !(t.item || '').toLowerCase().includes(filter.search.toLowerCase()) && !(t.store || '').toLowerCase().includes(filter.search.toLowerCase())) return false
-    if (filter.category && t.category !== filter.category) return false
-    return true
-  })
+function getMonthLabel(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
+  const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
+  return `${months[d.getMonth()]} ${d.getFullYear()}`
+}
 
-  const deleteTx = id => saveTx(transactions.filter(t => t.id !== id))
+function getDaysInMonth(dateStr) {
+  if (!dateStr) return 31
+  const d = new Date(dateStr + 'T00:00:00')
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+}
 
-  const visible = filtered.slice(0, MAX_VISIBLE)
+function getDayOfMonth(dateStr) {
+  if (!dateStr) return 1
+  return new Date(dateStr + 'T00:00:00').getDate()
+}
+
+/* Simple spending mini-chart */
+function SpendingChart({ transactions }) {
+  const daysInMonth = transactions.length > 0 ? getDaysInMonth(transactions[0].date) : 31
+  const latestDay = transactions.length > 0
+    ? Math.max(...transactions.map(t => getDayOfMonth(t.date)))
+    : 1
+  const progress = latestDay / daysInMonth
+
+  const dateTicks = [1, 8, 15, 22, daysInMonth]
 
   return (
-    <div style={{ padding: mobile ? '20px 16px' : '32px 40px', maxWidth: 800, margin: '0 auto' }}>
-      <div style={{ ...monoLabel, marginBottom: 4 }}>Transactions</div>
-      <h2 style={{
-        margin: '0 0 20px',
-        color: T.text,
-        fontSize: 22,
-        fontWeight: T.semibold,
-        fontFamily: T.fontSans,
-      }}>
-        All Purchases
-      </h2>
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ position: 'relative', height: 8, borderRadius: 4, overflow: 'visible', marginBottom: 8 }}>
+        {/* Dashed line background */}
+        <div style={{
+          position: 'absolute', top: 3, left: 0, right: 0, height: 2,
+          backgroundImage: `repeating-linear-gradient(to right, ${T.borderLight} 0, ${T.borderLight} 4px, transparent 4px, transparent 8px)`,
+        }} />
+        {/* Amber filled bar */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0,
+          width: `${Math.min(progress * 100, 100)}%`,
+          height: 8, borderRadius: 4,
+          background: T.amber,
+        }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        {dateTicks.map(d => (
+          <span key={d} style={{
+            ...monoLabel,
+            fontSize: 9,
+            color: T.textLight,
+          }}>
+            {String(d).padStart(2, '0')}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
 
-      {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '1 1 180px' }}>
-          <Search
-            size={16}
-            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: T.textLight, pointerEvents: 'none' }}
-          />
-          <input
-            placeholder="Search items or stores..."
-            value={filter.search}
-            onChange={e => setFilter(f => ({ ...f, search: e.target.value }))}
-            style={{ ...inputStyle, paddingLeft: 34, width: '100%', boxSizing: 'border-box' }}
-          />
+export default function TransactionsPage({ transactions, saveTx, setModal, mobile }) {
+  const [activeCategory, setActiveCategory] = useState('All')
+
+  // Compute category counts
+  const categoryCounts = useMemo(() => {
+    const counts = {}
+    transactions.forEach(t => {
+      const cat = t.category || 'Other'
+      counts[cat] = (counts[cat] || 0) + 1
+    })
+    return counts
+  }, [transactions])
+
+  const categoryChips = useMemo(() => {
+    const chips = [{ label: 'All', count: transactions.length }]
+    Object.entries(categoryCounts).forEach(([cat, count]) => {
+      chips.push({ label: cat, count })
+    })
+    return chips
+  }, [categoryCounts, transactions.length])
+
+  // Filter
+  const filtered = activeCategory === 'All'
+    ? transactions
+    : transactions.filter(t => (t.category || 'Other') === activeCategory)
+
+  // Group by date
+  const grouped = useMemo(() => {
+    const groups = {}
+    filtered.forEach(t => {
+      const date = t.date || 'unknown'
+      if (!groups[date]) groups[date] = []
+      groups[date].push(t)
+    })
+    // Sort by date descending
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]))
+  }, [filtered])
+
+  // Month summary
+  const totalAmount = transactions.reduce((sum, t) => sum + Number(t.price || 0) * Number(t.qty || 1), 0)
+  const uniqueStores = new Set(transactions.map(t => t.store).filter(Boolean)).size
+  const currentMonth = transactions.length > 0 ? getMonthLabel(transactions[0].date) : 'THIS MONTH'
+
+  return (
+    <div style={{ padding: mobile ? '20px 16px' : '32px 40px', maxWidth: 600, margin: '0 auto' }}>
+
+      {/* Header row: Avatar + menu */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 20,
+      }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: 10,
+          background: T.teal, color: T.cream,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: T.fontSans, fontWeight: T.semibold, fontSize: 13,
+          letterSpacing: '0.5px',
+        }}>
+          ED
         </div>
-        <select
-          value={filter.category}
-          onChange={e => setFilter(f => ({ ...f, category: e.target.value }))}
-          style={{
-            ...inputStyle,
-            flex: mobile ? '1 1 100%' : '0 0 140px',
-            boxSizing: 'border-box',
-          }}
-        >
-          <option value="">All Categories</option>
-          {CATEGORIES.map(c => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
+        <button style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: T.textLight, padding: 4,
+        }}>
+          <MoreHorizontal size={20} />
+        </button>
       </div>
 
-      {filtered.length > MAX_VISIBLE && (
-        <div style={{ color: T.textMuted, fontSize: 13, marginBottom: 12, fontFamily: T.fontSans }}>
-          Showing {MAX_VISIBLE} of {filtered.length}
-        </div>
-      )}
+      {/* Title row */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 24,
+      }}>
+        <h1 style={{
+          margin: 0, fontFamily: T.fontSans, fontWeight: T.semibold,
+          fontSize: 28, color: T.deepTeal,
+        }}>
+          Transactions
+        </h1>
+        <button
+          onClick={() => setModal && setModal('add')}
+          style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: T.amber, border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: T.accentText, fontSize: 24, fontWeight: T.light,
+            lineHeight: 1,
+          }}
+        >
+          <Plus size={22} strokeWidth={2.5} />
+        </button>
+      </div>
 
-      {filtered.length === 0 ? (
-        <Empty>No transactions found.</Empty>
-      ) : mobile ? (
-        /* Mobile card layout */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {visible.map(t => (
-            <div
-              key={t.id}
+      {/* Month summary */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        marginBottom: 20,
+      }}>
+        <div>
+          <div style={{
+            display: 'inline-block',
+            background: T.teal, color: T.cream,
+            borderRadius: T.radiusPill, padding: '4px 10px',
+            fontFamily: T.fontMono, fontSize: 10, fontWeight: T.medium,
+            letterSpacing: '0.6px', textTransform: 'uppercase',
+            marginBottom: 6,
+          }}>
+            {currentMonth}
+          </div>
+          <div style={{
+            fontFamily: T.fontSans, fontSize: 13,
+            color: T.textLight,
+          }}>
+            {transactions.length} purchase{transactions.length !== 1 ? 's' : ''} &middot; {uniqueStores} store{uniqueStores !== 1 ? 's' : ''}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <span style={{
+            fontFamily: T.fontSans, fontSize: 13,
+            color: T.textLight, marginRight: 4,
+          }}>
+            GHS
+          </span>
+          <span style={{
+            fontFamily: T.fontSans, fontSize: 36,
+            fontWeight: T.light, color: T.deepTeal,
+            letterSpacing: '-1.5px', lineHeight: 1,
+          }}>
+            {totalAmount.toFixed(2)}
+          </span>
+        </div>
+      </div>
+
+      {/* Spending mini-chart */}
+      <SpendingChart transactions={transactions} />
+
+      {/* Category chips */}
+      <div style={{
+        display: 'flex', gap: 8, marginBottom: 24,
+        overflowX: 'auto', paddingBottom: 4,
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
+      }}>
+        {categoryChips.map(chip => {
+          const isActive = activeCategory === chip.label
+          return (
+            <button
+              key={chip.label}
+              onClick={() => setActiveCategory(chip.label)}
               style={{
-                background: T.surfaceCard,
-                border: `1px solid ${T.borderLight}`,
-                borderRadius: T.radiusMd,
-                padding: '12px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: 10,
+                background: 'none',
+                border: `1px solid ${T.border}`,
+                borderRadius: T.radiusPill,
+                cursor: 'pointer',
+                padding: '6px 14px',
+                fontFamily: T.fontSans, fontSize: 13,
+                fontWeight: isActive ? T.semibold : T.regular,
+                color: isActive ? T.deepTeal : T.textLight,
+                whiteSpace: 'nowrap', flexShrink: 0,
+                borderColor: isActive ? T.deepTeal : T.border,
               }}
             >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: T.text, fontWeight: T.semibold, fontSize: 15, fontFamily: T.fontSans, marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {t.item}
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 13, color: T.textMuted, fontFamily: T.fontSans }}>
-                  {t.category && (
-                    <span style={{
-                      background: T.teal + '15',
-                      borderRadius: 6,
-                      padding: '2px 8px',
-                      fontSize: 12,
-                      color: T.teal,
-                      fontFamily: T.fontSans,
-                    }}>
-                      {t.category}
-                    </span>
-                  )}
-                  {t.store && <span>{t.store}</span>}
-                  {t.date && <span style={{ color: T.textLight }}>{t.date}</span>}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexShrink: 0 }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ color: T.teal, fontWeight: T.semibold, fontSize: 15, fontFamily: T.fontMono }}>
-                    {fmt(t.price)}
-                  </div>
-                  {t.qty > 1 && (
-                    <div style={{ color: T.textLight, fontSize: 12, fontFamily: T.fontMono }}> x{t.qty}</div>
-                  )}
-                </div>
-                <button
-                  onClick={() => deleteTx(t.id)}
-                  style={{ ...iconBtn, color: T.error, flexShrink: 0 }}
-                  title="Delete"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+              {chip.label} {chip.count}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Transaction groups */}
+      {filtered.length === 0 ? (
+        <Empty>No transactions found.</Empty>
       ) : (
-        /* Desktop table layout */
-        <div style={{ border: `1px solid ${T.borderLight}`, borderRadius: T.radiusLg, overflow: 'hidden', boxShadow: T.shadowSm }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: T.fontSans }}>
-            <colgroup>
-              <col style={{ width: '2fr' }} />
-              <col style={{ width: '.6fr' }} />
-              <col style={{ width: '1fr' }} />
-              <col style={{ width: '1.1fr' }} />
-              <col style={{ width: '1fr' }} />
-              <col style={{ width: '.9fr' }} />
-              <col style={{ width: 40 }} />
-            </colgroup>
-            <thead>
-              <tr style={{ background: 'rgba(18,38,35,0.04)' }}>
-                {['Item', 'Qty', 'Price', 'Category', 'Store', 'Date', ''].map((h, i) => (
-                  <th
-                    key={i}
-                    style={{
-                      padding: '10px 12px',
-                      textAlign: i === 1 || i === 2 ? 'right' : 'left',
-                      color: T.textLight,
-                      fontSize: 10,
-                      fontWeight: T.medium,
-                      fontFamily: T.fontMono,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.6px',
-                      borderBottom: `1px solid ${T.borderLight}`,
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map(t => (
-                <tr
-                  key={t.id}
-                  style={{ borderBottom: `1px solid ${T.borderLight}`, background: T.surfaceCard }}
-                >
-                  <td style={{ padding: '10px 12px', color: T.text, fontWeight: T.medium, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.item}
-                  </td>
-                  <td style={{ padding: '10px 12px', color: T.textMuted, fontSize: 14, textAlign: 'right', fontFamily: T.fontMono }}>
-                    {t.qty || 1}
-                  </td>
-                  <td style={{ padding: '10px 12px', color: T.teal, fontWeight: T.semibold, fontSize: 14, textAlign: 'right', fontFamily: T.fontMono }}>
-                    {fmt(t.price)}
-                  </td>
-                  <td style={{ padding: '10px 12px', fontSize: 13 }}>
-                    {t.category && (
-                      <span style={{
-                        background: T.teal + '15',
-                        borderRadius: 6,
-                        padding: '2px 8px',
-                        color: T.teal,
-                        fontSize: 12,
-                      }}>
-                        {t.category}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '10px 12px', color: T.textMuted, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.store}
-                  </td>
-                  <td style={{ padding: '10px 12px', color: T.textLight, fontSize: 13 }}>
-                    {t.date}
-                  </td>
-                  <td style={{ padding: '10px 4px', textAlign: 'center' }}>
-                    <button
-                      onClick={() => deleteTx(t.id)}
-                      style={{ ...iconBtn, color: T.error }}
-                      title="Delete"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {grouped.map(([date, items]) => {
+            const groupTotal = items.reduce((sum, t) => sum + Number(t.price || 0) * Number(t.qty || 1), 0)
+            return (
+              <div key={date}>
+                {/* Date group header */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  marginBottom: 10, padding: '0 2px',
+                }}>
+                  <span style={{ ...monoLabel, color: T.textLight }}>
+                    {formatDateGroup(date)}
+                  </span>
+                  <span style={{
+                    fontFamily: T.fontSans, fontSize: 13,
+                    color: T.textLight,
+                  }}>
+                    GHS {groupTotal.toFixed(2)}
+                  </span>
+                </div>
+
+                {/* Transaction cards */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {items.map(t => {
+                    const icon = CATEGORY_ICONS[t.category] || CATEGORY_ICONS['Other']
+                    return (
+                      <div
+                        key={t.id}
+                        style={{
+                          background: T.surfaceCard,
+                          border: `1px solid ${T.borderLight}`,
+                          borderRadius: T.radiusMd,
+                          padding: '12px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                        }}
+                      >
+                        {/* Category icon circle */}
+                        <div style={{
+                          width: 40, height: 40, borderRadius: 20,
+                          background: T.teal,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 18, flexShrink: 0,
+                        }}>
+                          {icon}
+                        </div>
+
+                        {/* Item details */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontFamily: T.fontSans, fontWeight: T.semibold,
+                            fontSize: 15, color: T.text,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            marginBottom: 2,
+                          }}>
+                            {t.item}
+                          </div>
+                          <div style={{
+                            ...monoLabel,
+                            fontSize: 10,
+                            color: T.textLight,
+                          }}>
+                            {t.store ? t.store.toUpperCase() : ''}
+                            {t.qty > 1 ? ` · ×${t.qty}` : ''}
+                          </div>
+                        </div>
+
+                        {/* Price */}
+                        <div style={{
+                          fontFamily: T.fontSans, fontWeight: T.light,
+                          fontSize: 18, color: T.deepTeal,
+                          flexShrink: 0,
+                        }}>
+                          {(Number(t.price || 0) * Number(t.qty || 1)).toFixed(2)}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
