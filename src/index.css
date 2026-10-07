@@ -1,0 +1,40 @@
+:root {
+  --bg: #0f1117;
+  --surface: #161822;
+  --surface2: #1a1d2e;
+  --border: #1e2030;
+  --border2: #2a2d3e;
+  --fg: #e2e8f0;
+  --fg2: #94a3b8;
+  --fg3: #64748b;
+  --accent: #06b6d4;
+  --green: #10b981;
+  --yellow: #f59e0b;
+  --red: #ef4444;
+  --purple: #8b5cf6;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
