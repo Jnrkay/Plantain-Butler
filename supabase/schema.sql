@@ -163,3 +163,4 @@ grant select, update on public.households to authenticated;
 grant select on public.household_members to authenticated;
 grant select, insert, update, delete on public.inventory_items, public.transactions, public.shopping_items to authenticated;
 revoke all on public.households, public.household_members, public.inventory_items, public.transactions, public.shopping_items, public.ai_usage from anon;
+revoke all on public.ai_usage from authenticated;
