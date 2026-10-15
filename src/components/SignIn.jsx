@@ -1,4 +1,5 @@
-// Sign-in: email → 6-digit code (or tap the link in the email). Accounts are invite-only.
+// Sign-in: email + password (works everywhere, no email needed), or an emailed
+// sign-in link as a fallback. Accounts are invite-only.
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../lib/supabaseConfig'
@@ -8,7 +9,10 @@ import { Tag, Field, TextInput, Button, reset } from './ui'
 const friendly = (e) => {
   const m = String(e?.message || e || '')
   if (/signups not allowed|user not found|not allowed for otp/i.test(m)) return "That email hasn't been invited. Ask the household owner to invite you."
-  if (/rate limit|too many|seconds/i.test(m)) return 'Too many attempts. Wait a minute, then try again.'
+  if (/invalid login credentials/i.test(m)) return 'Wrong email or password.'
+  if (/email rate limit|over_email_send_rate_limit/i.test(m)) return 'Too many sign-in emails for now — Supabase only sends a few an hour. Sign in with your password, or try the link again in about an hour.'
+  if (/security purposes|after \d+ seconds/i.test(m)) return 'Wait a minute before asking for another link.'
+  if (/rate limit|too many/i.test(m)) return 'Too many attempts. Wait a few minutes, then try again.'
   if (/expired|invalid|not found|otp/i.test(m)) return 'That link or code has expired or was already used. Send a new link and use the newest email.'
   if (/fetch|network/i.test(m)) return "Can't reach the server. Check your connection."
   return m || 'Something went wrong. Try again.'
@@ -51,6 +55,17 @@ export default function SignIn() {
   const [error, setError] = useState('')
   const [cooldown, setCooldown] = useState(0)
   const [googleOn, setGoogleOn] = useState(false)
+  const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
+
+  const signInWithPassword = async () => {
+    if (!valid || !password || busy) return
+    setBusy(true); setError('')
+    const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+    setBusy(false)
+    if (e) { setError(friendly(e)); return }
+    try { localStorage.setItem('pb-last-email', email.trim()) } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     // Show the Google button only once Google is enabled in Supabase
@@ -128,8 +143,8 @@ export default function SignIn() {
       <Shell step={1} title="Sign in to your household">
         <p style={sans(14, 400, { lineHeight: '20px', color: C.ink70 })}>
           {googleOn
-            ? 'Plantain Butler is invite-only. Continue with the Google account you were invited with, or get a sign-in link by email.'
-            : 'Plantain Butler is invite-only. Enter the email address you were invited with and we’ll email you a sign-in link.'}
+            ? 'Plantain Butler is invite-only. Continue with the Google account you were invited with, or sign in with your email.'
+            : 'Plantain Butler is invite-only. Sign in with the email you were invited with.'}
         </p>
         {googleOn && (
           <>
@@ -144,13 +159,32 @@ export default function SignIn() {
             </div>
           </>
         )}
-        <form onSubmit={(e) => { e.preventDefault(); send() }} style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
+        <form onSubmit={(e) => { e.preventDefault(); password ? signInWithPassword() : send() }} style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
           <Field label="EMAIL">
-            <TextInput type="email" inputMode="email" value={email} onChange={setEmail} placeholder="you@example.com" autoFocus={!email} />
+            <TextInput type="email" inputMode="email" autoComplete="username" value={email} onChange={setEmail} placeholder="you@example.com" autoFocus={!email} />
+          </Field>
+          <Field label="PASSWORD">
+            <TextInput type={showPw ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={setPassword} placeholder="Your password" autoFocus={!!email}>
+              {password && (
+                <button type="button" onClick={() => setShowPw(!showPw)} style={{ ...reset, ...sans(12, 500, { color: C.ink80 }), padding: '4px 0 4px 8px' }}>
+                  {showPw ? 'Hide' : 'Show'}
+                </button>
+              )}
+            </TextInput>
           </Field>
           {error && <div style={{ background: C.ember, padding: 12 }}><span style={sans(13, 500, { color: C.white })}>{error}</span></div>}
           <div style={{ flex: 1 }} />
-          <Button type="submit" disabled={!valid || busy}>{busy ? 'Sending…' : 'Email me a sign-in link'}</Button>
+          <Button type="submit" icon={password ? 'check@16' : undefined} disabled={!valid || busy}>
+            {busy ? (password ? 'Signing in…' : 'Sending…') : password ? 'Sign in' : 'Email me a sign-in link'}
+          </Button>
+          {password ? (
+            <button type="button" disabled={!valid || busy || cooldown > 0} onClick={send}
+              style={{ ...reset, alignSelf: 'center', ...sans(13, 500, { color: C.ink80, textDecoration: 'underline', textUnderlineOffset: 3 }) }}>
+              Forgot it? Email me a sign-in link instead
+            </button>
+          ) : (
+            <span style={{ ...sans(12, 400, { color: C.ink70 }), textAlign: 'center' }}>No password? Leave it blank and we’ll email you a link.</span>
+          )}
         </form>
       </Shell>
     )

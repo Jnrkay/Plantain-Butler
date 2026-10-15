@@ -12,6 +12,7 @@ import {
 } from './ui'
 import { exportBackup } from './OverflowMenu'
 import { callButler } from '../lib/ai'
+import { supabase } from '../lib/supabase'
 
 const ICON_BOX = { width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
 const catOptions = CATEGORIES.map((c) => ({ value: c, label: c }))
@@ -602,6 +603,41 @@ function ClearSheet({ onClose, openSheet, inventory, transactions, shoppingList,
   )
 }
 
+function PasswordSheet({ onClose, account }) {
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [state, setState] = useState({ busy: false, error: '', done: false })
+  const ok = pw.length >= 8 && pw === pw2
+  const save = async () => {
+    if (!ok) return
+    setState({ busy: true, error: '', done: false })
+    const { error } = await supabase.auth.updateUser({ password: pw })
+    setState({ busy: false, error: error ? (/reauth|recent/i.test(error.message) ? 'For security, sign out and back in, then change it straight away.' : error.message) : '', done: !error })
+  }
+  return (
+    <Sheet onClose={onClose} label="Change password">
+      <SheetHeader title="Change password" subtitle={account?.email ? `For ${account.email}` : 'Sign in with it on any device'} onClose={onClose} />
+      {state.done ? (
+        <>
+          <div style={{ background: C.teal, padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icon name="check@16" color={C.amber} />
+            <span style={sans(13, 400, { color: C.blush })}>Password updated. Use it next time you sign in.</span>
+          </div>
+          <Button onClick={onClose}>Done</Button>
+        </>
+      ) : (
+        <>
+          <Field label="NEW PASSWORD"><TextInput type="password" autoComplete="new-password" value={pw} onChange={setPw} placeholder="At least 8 characters" autoFocus /></Field>
+          <Field label="TYPE IT AGAIN"><TextInput type="password" autoComplete="new-password" value={pw2} onChange={setPw2} placeholder="Same password" /></Field>
+          {pw2 && pw !== pw2 && <span style={sans(12, 500, { color: C.ember })}>The two passwords don’t match.</span>}
+          {state.error && <div style={{ background: C.ember, padding: 12 }}><span style={sans(13, 500, { color: C.white })}>{state.error}</span></div>}
+          <Button icon="check@16" disabled={!ok || state.busy} onClick={save}>{state.busy ? 'Saving…' : 'Save password'}</Button>
+        </>
+      )}
+    </Sheet>
+  )
+}
+
 /* ================= M8 · Confirm dialog (23:8269) ================= */
 function ConfirmDialog({ onClose, title, body, confirmLabel, onConfirm, withBackup }) {
   const [backup, setBackup] = useState(false)
@@ -648,6 +684,7 @@ export default function Sheets({ sheet, onClose, ...rest }) {
     case 'dietary': return <DietarySheet {...props} />
     case 'clear': return <ClearSheet {...props} />
     case 'confirm': return <ConfirmDialog {...props} />
+    case 'password': return <PasswordSheet {...props} />
     case 'signOut': {
       const n = rest.account?.sync?.pending || 0
       return (

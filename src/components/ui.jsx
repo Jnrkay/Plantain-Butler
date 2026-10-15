@@ -232,13 +232,15 @@ const inputBox = (focus) => ({
 })
 const inputText = { ...sans(14, 400, { color: C.ink }), flex: 1, minWidth: 0, height: '100%', background: 'transparent' }
 
-export function TextInput({ value, onChange, placeholder, type = 'text', inputMode, autoFocus, list, focus, onKeyDown, step }) {
+export function TextInput({ value, onChange, placeholder, type = 'text', inputMode, autoFocus, list, focus, onKeyDown, step, autoComplete, children }) {
   return (
     <div style={inputBox(focus)} className="pb-input">
       <input
         type={type} value={value} placeholder={placeholder} inputMode={inputMode} autoFocus={autoFocus} list={list} step={step}
+        autoComplete={autoComplete} autoCapitalize={type === 'email' || type === 'password' ? 'off' : undefined}
         onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} style={inputText}
       />
+      {children}
     </div>
   )
 }

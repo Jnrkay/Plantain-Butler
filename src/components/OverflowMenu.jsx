@@ -92,8 +92,9 @@ export default function OverflowMenu({ profile, openSheet, onClose, account, sav
         <Item icon="down" label="Export backup" divider onClick={() => { exportBackup(); onClose() }} />
         <Item icon="up" label="Import backup" onClick={() => fileRef.current?.click()} />
         <Item icon="trash" label="Clear data…" danger divider onClick={() => openSheet('clear')} />
+        {account && <Item icon="user" label="Change password" divider onClick={() => openSheet('password')} />}
         {account && (
-          <Item icon="signout" label="Sign out" meta={account.email ? account.email.split('@')[0] : undefined} divider
+          <Item icon="signout" label="Sign out" meta={account.email ? account.email.split('@')[0] : undefined}
             onClick={() => openSheet('signOut')} />
         )}
         <input ref={fileRef} type="file" accept=".json,application/json" onChange={onImport} style={{ display: 'none' }} />
