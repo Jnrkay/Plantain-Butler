@@ -2,10 +2,20 @@
   "functions": {
     "api/anthropic.js": {
       "maxDuration": 60
+    },
+    "api/migrate.js": {
+      "maxDuration": 60,
+      "includeFiles": "supabase/**"
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ]
 }
