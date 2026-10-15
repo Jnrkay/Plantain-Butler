@@ -26,6 +26,14 @@ export default async function handler(req, res) {
         autoConfirm: s?.mailer_autoconfirm ?? null,
         otherProviders: Object.entries(s?.external || {}).filter(([k, v]) => v && k !== 'email').map(([k]) => k),
       }
+      if (secretVar) {
+        const u = await fetch(`${base}/auth/v1/admin/users?per_page=50`, {
+          headers: { apikey: process.env[secretVar], Authorization: `Bearer ${process.env[secretVar]}` },
+        })
+        const j = await u.json().catch(() => ({}))
+        out.auth.users = Array.isArray(j?.users) ? j.users.length : null
+        out.auth.usersInvitedNotYetSignedIn = Array.isArray(j?.users) ? j.users.filter((x) => !x.last_sign_in_at).length : null
+      }
     } catch (e) {
       out.auth = { reachable: false, error: String(e.message || e).slice(0, 120) }
     }
