@@ -8,7 +8,7 @@ const friendly = (e) => {
   const m = String(e?.message || e || '')
   if (/signups not allowed|user not found|not allowed for otp/i.test(m)) return "That email hasn't been invited. Ask the household owner to invite you."
   if (/rate limit|too many|seconds/i.test(m)) return 'Too many attempts. Wait a minute, then try again.'
-  if (/expired|invalid/i.test(m)) return 'That code is wrong or has expired. Check the latest email, or send a new code.'
+  if (/expired|invalid|not found|otp/i.test(m)) return 'That link or code has expired or was already used. Send a new link and use the newest email.'
   if (/fetch|network/i.test(m)) return "Can't reach the server. Check your connection."
   return m || 'Something went wrong. Try again.'
 }
@@ -60,21 +60,49 @@ export default function SignIn() {
     setStep(2); setCode(''); setCooldown(60)
   }
 
+  // Accepts the 6-digit code, the sign-in link copied from the email, or the
+  // address the link opened (…#access_token=…). Works even when the link would
+  // otherwise open in a different browser than the installed app.
+  const input = code.trim()
+  const isLink = /^https?:\/\//i.test(input)
+  const ready = isLink || input.replace(/\D/g, '').length >= 6
+
   const verify = async () => {
-    const token = code.replace(/\D/g, '')
-    if (token.length < 6 || busy) return
+    if (!ready || busy) return
     setBusy(true); setError('')
-    const { error: e } = await supabase.auth.verifyOtp({ email: email.trim(), token, type: 'email' })
+    let e = null
+    try {
+      if (isLink) {
+        const url = new URL(input)
+        const hash = new URLSearchParams(url.hash.replace(/^#/, ''))
+        const q = url.searchParams
+        if (hash.get('access_token') && hash.get('refresh_token')) {
+          ;({ error: e } = await supabase.auth.setSession({ access_token: hash.get('access_token'), refresh_token: hash.get('refresh_token') }))
+        } else {
+          const tokenHash = q.get('token_hash') || q.get('token')
+          if (!tokenHash) throw new Error("That link doesn't look like a sign-in link. Copy the Sign in link from the newest email.")
+          const linkType = q.get('type') || 'magiclink'
+          ;({ error: e } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: linkType }))
+          if (e && linkType === 'magiclink') ({ error: e } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'email' }))
+        }
+      } else {
+        ;({ error: e } = await supabase.auth.verifyOtp({ email: email.trim(), token: input.replace(/\D/g, ''), type: 'email' }))
+      }
+    } catch (err) { e = err }
     setBusy(false)
     if (e) setError(friendly(e))
     // On success the auth listener in the store takes over.
+  }
+
+  const pasteFromClipboard = async () => {
+    try { const t = await navigator.clipboard.readText(); if (t) setCode(t.trim()) } catch { /* permission denied — user can paste manually */ }
   }
 
   if (step === 1) {
     return (
       <Shell step={1} title="Sign in to your household">
         <p style={sans(14, 400, { lineHeight: '20px', color: C.ink70 })}>
-          Plantain Butler is invite-only. Enter the email address you were invited with and we’ll send you a sign-in code.
+          Plantain Butler is invite-only. Enter the email address you were invited with and we’ll email you a sign-in link.
         </p>
         <form onSubmit={(e) => { e.preventDefault(); send() }} style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
           <Field label="EMAIL">
@@ -82,7 +110,7 @@ export default function SignIn() {
           </Field>
           {error && <div style={{ background: C.ember, padding: 12 }}><span style={sans(13, 500, { color: C.white })}>{error}</span></div>}
           <div style={{ flex: 1 }} />
-          <Button type="submit" disabled={!valid || busy}>{busy ? 'Sending…' : 'Email me a code'}</Button>
+          <Button type="submit" disabled={!valid || busy}>{busy ? 'Sending…' : 'Email me a sign-in link'}</Button>
         </form>
       </Shell>
     )
@@ -91,16 +119,29 @@ export default function SignIn() {
   return (
     <Shell step={2} title="Check your email">
       <p style={sans(14, 400, { lineHeight: '20px', color: C.ink70 })}>
-        We sent a code to <span style={{ color: C.ink, fontWeight: 500 }}>{email.trim()}</span>. Enter it below, or tap the link in the email on this device.
+        We emailed a sign-in link to <span style={{ color: C.ink, fontWeight: 500 }}>{email.trim()}</span>.
       </p>
+      <div style={{ background: C.row, padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <span style={TX.label}>ON THIS PHONE</span>
+        <p style={sans(13, 400, { lineHeight: '19px', color: C.ink })}>
+          In the email, <strong style={{ fontWeight: 500 }}>press and hold “Sign in”</strong>, choose <strong style={{ fontWeight: 500 }}>Copy Link</strong>, then paste it below. Tapping the link works too if you use the app in your browser.
+        </p>
+      </div>
       <form onSubmit={(e) => { e.preventDefault(); verify() }} style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
-        <Field label="SIGN-IN CODE">
-          <div className="pb-input" style={{ height: 56, display: 'flex', alignItems: 'center', padding: '0 16px', background: C.field, border: `1px solid ${C.ink18}` }}>
+        <Field label="SIGN-IN LINK OR CODE">
+          <div className="pb-input" style={{ height: 52, display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px 0 14px', background: C.field, border: `1px solid ${C.ink18}` }}>
             <input
-              value={code} onChange={(e) => setCode(e.target.value.replace(/[^\d]/g, '').slice(0, 8))}
-              inputMode="numeric" autoComplete="one-time-code" placeholder="••••••" autoFocus aria-label="Sign-in code"
-              style={{ ...mono(24, 500, { letterSpacing: 8, color: C.ink }), flex: 1, minWidth: 0, height: '100%' }}
+              value={code} onChange={(e) => setCode(e.target.value)}
+              autoComplete="one-time-code" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+              placeholder="Paste the link from the email" aria-label="Sign-in link or code"
+              style={{ ...(isLink ? mono(12, 400, { color: C.ink }) : sans(15, 400, { color: C.ink, letterSpacing: input && !isLink ? 4 : 0 })), flex: 1, minWidth: 0, height: '100%', textOverflow: 'ellipsis' }}
             />
+            {typeof navigator !== 'undefined' && navigator.clipboard?.readText && (
+              <button type="button" onClick={pasteFromClipboard}
+                style={{ ...reset, height: 40, padding: '0 14px', background: C.ink, flexShrink: 0 }}>
+                <span style={sans(13, 500, { color: C.cream })}>Paste</span>
+              </button>
+            )}
           </div>
         </Field>
         {error && <div style={{ background: C.ember, padding: 12 }}><span style={sans(13, 500, { color: C.white })}>{error}</span></div>}
@@ -110,11 +151,11 @@ export default function SignIn() {
           </button>
           <button type="button" disabled={cooldown > 0 || busy} onClick={send}
             style={{ ...reset, ...sans(13, 500, { color: cooldown ? C.ink45 : C.ink80, textDecoration: cooldown ? 'none' : 'underline', textUnderlineOffset: 3 }) }}>
-            {cooldown ? `Resend in ${cooldown}s` : 'Send a new code'}
+            {cooldown ? `Resend in ${cooldown}s` : 'Send a new link'}
           </button>
         </div>
         <div style={{ flex: 1 }} />
-        <Button type="submit" icon="check@16" disabled={code.length < 6 || busy}>{busy ? 'Signing in…' : 'Sign in'}</Button>
+        <Button type="submit" icon="check@16" disabled={!ready || busy}>{busy ? 'Signing in…' : 'Sign in'}</Button>
       </form>
     </Shell>
   )
