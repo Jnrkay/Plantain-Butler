@@ -110,18 +110,23 @@ begin
   return hid;
 end $$;
 
--- Daily AI cap. Called by the server with the service key; returns true if the request is allowed.
-create or replace function public.bump_ai_usage(uid uuid, daily_limit integer) returns boolean
+-- Daily AI cap. The server calls this with the signed-in user's token; it counts the
+-- request against that user only and returns today's total. Calling it directly can
+-- only ever use up the caller's own allowance.
+drop function if exists public.bump_ai_usage(uuid, integer);
+create or replace function public.bump_ai_usage() returns integer
 language plpgsql security definer set search_path = public as $$
 declare n integer;
 begin
-  insert into public.ai_usage (user_id, day, requests) values (uid, current_date, 1)
+  if auth.uid() is null then raise exception 'not signed in'; end if;
+  insert into public.ai_usage (user_id, day, requests) values (auth.uid(), current_date, 1)
   on conflict (user_id, day) do update set requests = public.ai_usage.requests + 1
   returning requests into n;
-  return n <= daily_limit;
+  return n;
 end $$;
 
-revoke all on function public.bump_ai_usage(uuid, integer) from public, anon, authenticated;
+revoke all on function public.bump_ai_usage() from public, anon;
+grant execute on function public.bump_ai_usage() to authenticated;
 grant execute on function public.ensure_household() to authenticated;
 grant execute on function public.is_household_member(uuid) to authenticated;
 
