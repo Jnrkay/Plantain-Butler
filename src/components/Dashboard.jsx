@@ -1,250 +1,122 @@
-import { useMemo } from 'react'
-import { Plus, ArrowRight } from 'lucide-react'
-import { fmt } from '../lib/utils'
-import { T, monoLabel, heroAmount } from '../lib/theme'
+// A1 · Dashboard (Figma 23:5539)
+import { C, TX, sans, mono } from '../lib/theme'
+import { MONTHS_LONG, money, monthlyBudget, sum, isLow } from '../lib/derive'
+import { Header, Tag, Money, Barcode, Icon, reset } from './ui'
 
-// Barcode budget visualization — 90 vertical bars with deterministic heights
-function BudgetBarcode({ spent, total }) {
-  const bars = 90
-  const pct = total > 0 ? Math.min(1, spent / total) : 0
-  const filledBars = Math.round(pct * bars)
-  const overBudget = spent > total
-
-  // Deterministic pseudo-random heights so they don't change on re-render
-  const heights = useMemo(() =>
-    Array.from({ length: bars }, (_, i) => {
-      const seed = Math.sin(i * 127.1 + 311.7) * 43758.5453
-      return 55 + (seed - Math.floor(seed)) * 45
-    }), [bars])
-
+function Stat({ label, value, sub, first }) {
   return (
-    <div style={{ display: 'flex', gap: 1, height: 40, alignItems: 'flex-end' }}>
-      {heights.map((h, i) => (
-        <div
-          key={i}
-          style={{
-            flex: 1,
-            height: `${h}%`,
-            background: i < filledBars
-              ? (overBudget ? T.error : T.deepTeal)
-              : 'rgba(18,38,35,0.15)',
-            borderRadius: 0.5,
-            transition: 'background 0.3s ease',
-          }}
-        />
-      ))}
+    <div style={{
+      flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, padding: first ? '12px 0' : '12px 0 12px 12px',
+      borderLeft: first ? 'none' : `1px solid ${C.ink18}`,
+    }}>
+      <span style={TX.micro}>{label}</span>
+      <span style={sans(30, 300, { letterSpacing: -0.9, color: C.ink })}>{value}</span>
+      <span style={sans(11, 400, { color: C.ink80, whiteSpace: 'nowrap' })}>{sub}</span>
     </div>
   )
 }
 
-export default function Dashboard({ totalSpend, inventory, lowStock, monthTx, transactions, profile, setModal, setPage, mobile }) {
-  const budget = profile.monthlyBudget || 0
-  const remaining = Math.max(0, budget - totalSpend)
+// Hero figure shrinks for very large totals so it never overflows the column
+const heroSize = (s) => {
+  const len = s.replace(/,/g, '').length + s.split(',').length * 0.35
+  return len <= 6.4 ? 72 : Math.max(44, Math.floor((72 * 6.4) / len))
+}
 
-  // Initials for avatar
-  const initials = (profile.name || 'PB').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+export default function Dashboard({ header, profile, inventory, monthTx, totalSpend, lowStock, shoppingList, openSheet, setPage }) {
+  const month = MONTHS_LONG[new Date().getMonth()].toUpperCase()
+  const budget = monthlyBudget(profile)
+  const left = budget - totalSpend
+  const totalStr = money(totalSpend)
+  const size = heroSize(totalStr)
 
-  // Current month name
-  const monthName = new Date().toLocaleString('en', { month: 'long' }).toUpperCase()
-
-  // Format number without currency prefix (for hero display)
-  const fmtNum = (n) => Number(n || 0).toFixed(2)
-
-  // Shopping list count (low stock items)
-  const shoppingCount = lowStock.length
-  const shoppingEst = lowStock.reduce((sum, item) => sum + Number(item.price || 0), 0)
-  const runningLowCount = lowStock.filter(i => i.status === 'low').length
+  const toBuy = shoppingList.filter((s) => !s.checked)
+  const est = sum(toBuy, (s) => (Number(s.estPrice) || 0) * (Number(s.qty) || 1))
+  const lowOnList = toBuy.filter((s) => isLow(inventory.find((i) => i.name.toLowerCase().trim() === String(s.name).toLowerCase().trim()))).length
 
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 800, margin: '0 auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px))' }}>
+      <Header {...header} />
 
-      {/* 1. Header row — avatar left, menu right */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          background: T.teal, color: T.cream,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: T.fontMono, fontSize: 12, fontWeight: T.medium,
-          letterSpacing: '0.5px',
-        }}>
-          {initials}
+      {/* Hero 23:5561 */}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '16px 20px 12px' }}>
+        <Tag>TOTAL SPENT · {month}</Tag>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={mono(13, 500, { color: C.ink80 })}>GHS</span>
+          <Money value={totalStr} size={size} tracking={-size * 0.05} />
         </div>
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          gap: 3, cursor: 'pointer', padding: 4,
-        }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{
-              width: 4, height: 4, borderRadius: '50%',
-              background: T.deepTeal,
-            }} />
-          ))}
-        </div>
-      </div>
+      </section>
 
-      {/* 2. Total Spent pill label */}
-      <div style={{ marginBottom: 12 }}>
-        <span style={{
-          display: 'inline-block',
-          background: T.teal,
-          color: T.cream,
-          fontFamily: T.fontMono,
-          fontSize: 10,
-          fontWeight: T.medium,
-          letterSpacing: '0.6px',
-          textTransform: 'uppercase',
-          padding: '4px 10px',
-          borderRadius: T.radiusSm,
-          lineHeight: 1.2,
-        }}>
-          {`TOTAL SPENT · ${monthName}`}
-        </span>
-      </div>
-
-      {/* 3. Hero Amount — GHS prefix + large number */}
-      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{
-          fontFamily: T.fontSans,
-          fontSize: 14,
-          fontWeight: T.regular,
-          color: T.deepTeal,
-          lineHeight: 1,
-        }}>
-          GHS
-        </span>
-        <span style={{
-          ...heroAmount,
-          fontSize: 72,
-        }}>
-          {fmtNum(totalSpend)}
-        </span>
-      </div>
-
-      {/* 4. Stats Row — three columns with dividers */}
-      <div style={{
-        display: 'flex',
-        borderTop: `1px solid ${T.border}`,
-        borderBottom: `1px solid ${T.border}`,
-        padding: '14px 0',
-        marginBottom: 24,
-      }}>
-        {/* In Stock */}
-        <div style={{ flex: 1 }}>
-          <div style={{ ...monoLabel, marginBottom: 6 }}>IN STOCK</div>
-          <div style={{ fontSize: 28, fontWeight: T.medium, color: T.deepTeal, lineHeight: 1 }}>{inventory.length}</div>
-          <div style={{ fontSize: 12, color: T.textLight, marginTop: 4, fontFamily: T.fontSans }}>items tracked</div>
+      {/* Stats 23:5567 */}
+      <section style={{ padding: '0 20px' }}>
+        <div style={{ display: 'flex', borderTop: `1px solid ${C.ink18}`, borderBottom: `1px solid ${C.ink18}` }}>
+          <Stat first label="IN STOCK" value={inventory.length} sub="items tracked" />
+          <Stat label="LOW STOCK" value={lowStock.length} sub="needs restock" />
+          <Stat label="THIS MONTH" value={monthTx.length} sub="transactions" />
         </div>
-        {/* Low Stock */}
-        <div style={{ flex: 1, borderLeft: `1px solid ${T.border}`, paddingLeft: 16 }}>
-          <div style={{ ...monoLabel, marginBottom: 6 }}>LOW STOCK</div>
-          <div style={{ fontSize: 28, fontWeight: T.medium, color: T.deepTeal, lineHeight: 1 }}>{lowStock.length}</div>
-          <div style={{ fontSize: 12, color: T.textLight, marginTop: 4, fontFamily: T.fontSans }}>needs restock</div>
-        </div>
-        {/* This Month */}
-        <div style={{ flex: 1, borderLeft: `1px solid ${T.border}`, paddingLeft: 16 }}>
-          <div style={{ ...monoLabel, marginBottom: 6 }}>THIS MONTH</div>
-          <div style={{ fontSize: 28, fontWeight: T.medium, color: T.deepTeal, lineHeight: 1 }}>{monthTx.length}</div>
-          <div style={{ fontSize: 12, color: T.textLight, marginTop: 4, fontFamily: T.fontSans }}>transactions</div>
-        </div>
-      </div>
+      </section>
 
-      {/* 5. Budget Section — label row + barcode */}
-      {budget > 0 && (
-        <div style={{ marginBottom: 32 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-            <span style={{ ...monoLabel }}>BUDGET LEFT</span>
-            <span style={{
-              fontFamily: T.fontSans,
-              fontSize: 14,
-              fontWeight: T.regular,
-              color: T.deepTeal,
-            }}>
-              {fmtNum(remaining)} / {fmtNum(budget)}
-            </span>
-          </div>
-          <BudgetBarcode spent={totalSpend} total={budget} />
+      {/* Budget 23:5581 */}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <span style={TX.label}>BUDGET LEFT</span>
+          {budget > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, ...sans(24, 300, { letterSpacing: -0.72 }) }}>
+              <span style={{ color: left < 0 ? C.ember : C.ink, whiteSpace: 'nowrap' }}>{left < 0 ? '−' : ''}{money(Math.abs(left))}</span>
+              <span style={{ color: C.ink55, whiteSpace: 'nowrap' }}>/ {money(budget)}</span>
+            </div>
+          ) : (
+            <button onClick={() => openSheet('budgets')} style={{ ...reset, ...sans(14, 500, { color: C.ink, textDecoration: 'underline', textUnderlineOffset: 3 }) }}>
+              Set a monthly budget
+            </button>
+          )}
         </div>
-      )}
+        <Barcode bars={88} fraction={budget > 0 ? totalSpend / budget : 0} on={left < 0 ? C.ember : C.ink} />
+      </section>
 
-      {/* 6 & 7. Stacked CTA Cards — Quick Add on top, Shopping List behind */}
-      <div style={{ position: 'relative', marginBottom: 24 }}>
-        {/* Quick Add card — sits on top */}
+      {/* CTA stack 23:5678 */}
+      <section style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 387 }}>
         <button
-          onClick={() => setModal('manual')}
+          onClick={() => openSheet('quickAdd')}
           style={{
-            display: 'block',
-            width: '100%',
-            background: T.teal,
-            color: T.cream,
-            border: 'none',
-            borderRadius: T.radiusXl,
-            padding: '20px 24px',
-            cursor: 'pointer',
-            fontFamily: T.fontSans,
-            textAlign: 'left',
-            position: 'relative',
-            zIndex: 2,
-            boxShadow: T.shadowMd,
+            ...reset, height: 172, marginBottom: -24, flexShrink: 0, background: C.amber, borderRadius: '26px 26px 0 0',
+            padding: '16px 20px 36px', display: 'flex', flexDirection: 'column', width: '100%',
           }}
         >
-          {/* Top labels */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>QUICK ADD</span>
-            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>RECEIPT &middot; ITEM</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+            <span style={TX.label}>QUICK ADD</span>
+            <span style={TX.label}>RECEIPT · ITEM</span>
           </div>
-          {/* Large + icon centered */}
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '12px 0' }}>
-            <Plus size={36} strokeWidth={1.5} color={T.cream} />
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+            <Icon name="plus@40" />
           </div>
         </button>
 
-        {/* Shopping List card — partially behind Quick Add */}
-        <button
-          onClick={() => setPage('shopping')}
+        <div
           style={{
-            display: 'block',
-            width: '100%',
-            background: T.deepTeal,
-            color: T.cream,
-            border: 'none',
-            borderRadius: T.radiusXl,
-            padding: '20px 24px',
-            paddingTop: 32,
-            marginTop: -14,
-            cursor: 'pointer',
-            fontFamily: T.fontSans,
-            textAlign: 'left',
-            position: 'relative',
-            zIndex: 1,
+            position: 'relative', flex: 1, minHeight: 239, background: C.teal, borderRadius: '26px 26px 0 0',
+            padding: '16px 20px 36px', display: 'flex', flexDirection: 'column', gap: 16,
           }}
         >
-          {/* Top labels */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>SHOPPING LIST</span>
-            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>NEXT TRIP</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ ...TX.label, color: C.blush80 }}>SHOPPING LIST</span>
+            <span style={{ ...TX.label, color: C.blush80 }}>NEXT TRIP</span>
           </div>
-          {/* Content row */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: T.medium, color: T.cream, marginBottom: 4 }}>
-                {shoppingCount} item{shoppingCount !== 1 ? 's' : ''} to buy
-              </div>
-              <div style={{ fontSize: 13, color: T.textOnTealMuted }}>
-                Est. GHS {fmtNum(shoppingEst)} {runningLowCount > 0 ? `· ${runningLowCount} running low` : ''}
-              </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+              <span style={sans(26, 300, { letterSpacing: -0.52, color: C.blush, whiteSpace: 'nowrap' })}>
+                {toBuy.length === 0 ? 'Nothing to buy' : `${toBuy.length} ${toBuy.length === 1 ? 'item' : 'items'} to buy`}
+              </span>
+              <span style={sans(12, 400, { color: C.blush80, whiteSpace: 'nowrap' })}>
+                {toBuy.length === 0 ? 'Build it from low stock' : `Est. GHS ${money(est)}${lowOnList ? ` · ${lowOnList} running low` : ''}`}
+              </span>
             </div>
-            <div style={{
-              width: 36, height: 36,
-              background: T.amber,
-              borderRadius: 10,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}>
-              <ArrowRight size={18} color={T.deepTeal} />
-            </div>
+            <button aria-label="Open shopping list" onClick={() => setPage('shopping')}
+              style={{ ...reset, width: 44, height: 44, background: C.amber, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon name="arrow@18" />
+            </button>
           </div>
-        </button>
-      </div>
+        </div>
+      </section>
     </div>
   )
 }

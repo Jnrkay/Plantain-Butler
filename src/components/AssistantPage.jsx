@@ -1,505 +1,226 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, Mic, MoreHorizontal } from 'lucide-react';
-import { STOCK_STATUS } from '../lib/constants';
-import { fmt, today, monthKey } from '../lib/utils';
-import { T, monoLabel } from '../lib/theme';
+// A6 · Butler (Figma 23:6307)
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { C, TX, sans, mono } from '../lib/theme'
+import { today, monthKey } from '../lib/utils'
+import { lineTotal, sum, money, monthlyBudget, greeting, isLow, txInMonth, shiftMonth, stockOf, STOCK } from '../lib/derive'
+import { Header, Barcode, Icon, reset } from './ui'
 
-/* ------------------------------------------------------------------ */
-/*  Category barcode visualization for inside assistant bubbles        */
-/* ------------------------------------------------------------------ */
-function CategoryBarcode({ categories }) {
-  // categories: [{ name, amount, color }]
-  const barCount = 60;
-  const heights = useMemo(() =>
-    Array.from({ length: barCount }, (_, i) => {
-      const seed = Math.sin(i * 127.1 + 311.7) * 43758.5453;
-      return 50 + (seed - Math.floor(seed)) * 50;
-    }), [barCount]);
+const CHIPS = ['This month vs last', 'Optimise budget']
+const STORE_KEY = 'pb-butler-chat'
 
-  // Split bars roughly proportionally between categories
-  const total = categories.reduce((s, c) => s + c.amount, 0);
-  const splits = categories.map(c => Math.max(4, Math.round((c.amount / (total || 1)) * barCount)));
-
-  return (
-    <div style={{ marginTop: 14, marginBottom: 6 }}>
-      <div style={{ display: 'flex', gap: 1, height: 36, alignItems: 'flex-end' }}>
-        {heights.map((h, i) => {
-          // Determine which category this bar belongs to
-          let catIdx = 0;
-          let acc = 0;
-          for (let c = 0; c < splits.length; c++) {
-            acc += splits[c];
-            if (i < acc) { catIdx = c; break; }
-          }
-          return (
-            <div
-              key={i}
-              style={{
-                flex: 1,
-                height: `${h}%`,
-                backgroundColor: categories[catIdx]?.color || T.warm,
-                borderRadius: 0.5,
-              }}
-            />
-          );
-        })}
-      </div>
-      {/* Category labels */}
-      <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-        {categories.map((cat, i) => (
-          <span
-            key={i}
-            style={{
-              fontFamily: T.fontMono,
-              fontSize: 10,
-              fontWeight: T.medium,
-              letterSpacing: '0.5px',
-              textTransform: 'uppercase',
-              color: cat.color,
-            }}
-          >
-            {cat.name} {Math.round(cat.amount)}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
+// Minimal formatting for model replies: paragraphs, line breaks, **bold**
+function RichText({ text, color }) {
+  return String(text).split(/\n{2,}/).map((para, i) => (
+    <p key={i} style={sans(14, 400, { lineHeight: '20px', color, marginTop: i ? 8 : 0 })}>
+      {para.split('\n').map((line, j) => (
+        <span key={j}>
+          {j > 0 && <br />}
+          {line.split(/(\*\*[^*]+\*\*)/g).map((seg, k) =>
+            seg.startsWith('**') && seg.endsWith('**') ? <strong key={k} style={{ fontWeight: 500 }}>{seg.slice(2, -2)}</strong> : seg.replace(/^[-*]\s/, '· '))}
+        </span>
+      ))}
+    </p>
+  ))
 }
 
-/* ------------------------------------------------------------------ */
-/*  Initial message & suggestion chips                                 */
-/* ------------------------------------------------------------------ */
-const INITIAL_MSG = {
-  role: 'assistant',
-  content: "Here's a quick look at your top spending categories this month.",
-  showBarcode: true,
-};
+function ButlerBubble({ children, label }) {
+  return (
+    <div style={{ background: C.teal, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, width: 'min(300px, 100%)', flexShrink: 0 }}>
+      {label && <span style={{ ...TX.label, color: C.blush80 }}>PLANTAIN BUTLER</span>}
+      {children}
+    </div>
+  )
+}
 
-const SUGGESTION_CHIPS = [
-  'This month vs last',
-  'Optimise budget',
-];
+function UserBubble({ text }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
+      <div style={{ background: C.ink, padding: '12px 16px', maxWidth: 280 }}>
+        <p style={sans(14, 400, { color: C.cream, lineHeight: '20px' })}>{text}</p>
+      </div>
+    </div>
+  )
+}
 
-/* ------------------------------------------------------------------ */
-/*  AssistantPage                                                       */
-/* ------------------------------------------------------------------ */
-export default function AssistantPage({ transactions, inventory, profile, mobile }) {
-  const [messages, setMessages] = useState([INITIAL_MSG]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const endRef = useRef(null);
+function Typing() {
+  return (
+    <ButlerBubble>
+      <div style={{ display: 'flex', gap: 6, height: 20, alignItems: 'center' }}>
+        {[0, 1, 2].map((i) => <span key={i} style={{ width: 6, height: 6, background: C.blush, animation: `pb-blink 1.2s ${i * 0.16}s infinite` }} />)}
+      </div>
+    </ButlerBubble>
+  )
+}
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+export default function AssistantPage({ header, transactions, inventory, profile, shoppingList, addToShoppingList }) {
+  const [messages, setMessages] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(STORE_KEY)) || [] } catch { return [] }
+  })
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [suggestion, setSuggestion] = useState('open') // open | added | dismissed
+  const [listening, setListening] = useState(false)
+  const scrollRef = useRef(null)
+  const inputRef = useRef(null)
 
-  /* ---------- Build top-2 categories for barcode viz ---------- */
-  const topCategories = useMemo(() => {
-    const catTotals = {};
-    const mk = monthKey(new Date());
-    transactions
-      .filter(t => monthKey(new Date(t.date)) === mk)
-      .forEach(t => {
-        const c = t.category || 'Other';
-        catTotals[c] = (catTotals[c] || 0) + t.price * t.qty;
-      });
-    const sorted = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
-    const colors = [T.amber, 'rgba(244,221,211,0.85)'];
-    return sorted.slice(0, 2).map(([name, amount], i) => ({
-      name,
-      amount,
-      color: colors[i] || colors[1],
-    }));
-  }, [transactions]);
+  useEffect(() => { try { sessionStorage.setItem(STORE_KEY, JSON.stringify(messages.slice(-40))) } catch { /* ignore */ } }, [messages])
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [messages, loading, suggestion])
 
-  /* ---------- System context builder ---------- */
+  const mk = monthKey(today())
+  const monthTx = txInMonth(transactions, mk)
+  const spent = sum(monthTx, lineTotal)
+  const budget = monthlyBudget(profile)
+  const firstName = String(profile?.name || '').trim().split(/\s+/)[0]
+
+  const cats = useMemo(() => {
+    const m = {}
+    monthTx.forEach((t) => { const c = t.category || 'Other'; m[c] = (m[c] || 0) + lineTotal(t) })
+    return Object.entries(m).sort((a, b) => b[1] - a[1])
+  }, [monthTx])
+  const [top1, top2] = cats
+
+  const introText = `${greeting()}${firstName ? `, ${firstName}` : ''}. You've spent GHS ${money(spent)} this month${budget ? ` — ${((spent / budget) * 100).toFixed(1)}% of budget` : ''}.${top1 ? ` ${top1[0]} lead${top1[0].endsWith('s') ? '' : 's'}.` : ' Nothing logged yet.'}`
+
+  const onList = new Set(shoppingList.map((s) => String(s.name).toLowerCase().trim()))
+  const lowItem = inventory.find((i) => isLow(i) && !onList.has(i.name.toLowerCase().trim()))
+  const suggestionText = lowItem && (stockOf(lowItem) === 'low'
+    ? `${lowItem.name} has run out — want me to add it to your list?`
+    : `${inventory.some((i) => stockOf(i) === 'low') ? '' : 'Nothing critical yet. '}${lowItem.name} is down to medium — want me to add it to your list?`)
+
   const buildContext = () => {
-    const mk = monthKey(new Date());
-    const monthTx = transactions.filter(t => monthKey(new Date(t.date)) === mk);
-    const monthTotal = monthTx.reduce((s, t) => s + t.price * t.qty, 0);
+    const prevMk = shiftMonth(mk, -1)
+    const prevSpent = sum(txInMonth(transactions, prevMk), lineTotal)
+    const inv = inventory.slice(0, 40).map((i) => `${i.name}: qty ${i.qty} (${STOCK[stockOf(i)].label})${i.lastPrice ? `, last GHS ${money(i.lastPrice)}` : ''}`).join('\n')
+    const recent = [...transactions].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30)
+      .map((t) => `${t.date} | ${t.item} | GHS ${money(t.price)} x${t.qty} | ${t.category} | ${t.store || '-'}`).join('\n')
+    return `You are Plantain Butler, a warm, practical household finance assistant for a home in Ghana. Currency is Ghana cedis — write amounts as "GHS 12.50". Today is ${today()}.
 
-    const invSlice = inventory.slice(0, 30).map(i =>
-      `${i.name}: ${i.qty} ${i.unit || ''} (${STOCK_STATUS[i.status]?.label || i.status})`
-    ).join('\n');
+Household: ${profile?.name || 'User'}; ${profile?.householdType || 'household'} (${profile?.adults || 1} adults, ${profile?.kids || 0} kids). Monthly budget: ${budget ? `GHS ${money(budget)}` : 'not set'}. Shops: ${(profile?.stores || []).join(', ') || 'unknown'}. Diet: ${profile?.dietaryPrefs || 'none given'}.
 
-    const lowStock = inventory.filter(i => i.status === 'low' || i.status === 'out')
-      .map(i => `${i.name} (${STOCK_STATUS[i.status]?.label || i.status})`).join(', ');
+This month: GHS ${money(spent)} across ${monthTx.length} purchases. Last month: GHS ${money(prevSpent)}.
+Category totals this month: ${cats.map(([c, v]) => `${c} GHS ${money(v)}`).join(', ') || 'none'}.
 
-    const recentTx = transactions.slice(-20).map(t =>
-      `${t.date} | ${t.name} | ${fmt(t.price)} x${t.qty} | ${t.category} | ${t.store}`
-    ).join('\n');
+Inventory:
+${inv || 'none'}
 
-    const catTotals = {};
-    transactions.forEach(t => {
-      const c = t.category || 'Other';
-      catTotals[c] = (catTotals[c] || 0) + t.price * t.qty;
-    });
-    const catSummary = Object.entries(catTotals)
-      .sort((a, b) => b[1] - a[1])
-      .map(([c, v]) => `${c}: ${fmt(v)}`)
-      .join(', ');
+Shopping list: ${shoppingList.map((s) => `${s.name}${s.checked ? ' (in cart)' : ''}`).join(', ') || 'empty'}
 
-    return `You are Plantain Butler, a Ghanaian household finance assistant. Use Ghanaian Cedi (₵). Today is ${today()}.
+Recent purchases:
+${recent || 'none'}
 
-Profile: ${profile?.name || 'User'}, budget: ${fmt(profile?.budget || 0)}/month, household: ${profile?.household || 1}.
+Answer in 2–5 short sentences or a short list. No markdown headings.`
+  }
 
-This month: ${fmt(monthTotal)} spent across ${monthTx.length} transactions.
-
-Inventory (first 30):
-${invSlice || 'No items'}
-
-Low/out of stock: ${lowStock || 'None'}
-
-Recent transactions:
-${recentTx || 'None'}
-
-Category totals (all time): ${catSummary || 'None'}
-
-Be helpful, concise, and practical. Format currency as ₵X.XX.`;
-  };
-
-  /* ---------- Send message ---------- */
-  const sendMessage = async (text) => {
-    const trimmed = text.trim();
-    if (!trimmed || loading) return;
-
-    const userMsg = { role: 'user', content: trimmed };
-    const updated = [...messages, userMsg];
-    setMessages(updated);
-    setInput('');
-    setLoading(true);
-
+  const send = async (text) => {
+    const trimmed = text.trim()
+    if (!trimmed || loading) return
+    const next = [...messages, { role: 'user', content: trimmed }]
+    setMessages(next)
+    setInput('')
+    setLoading(true)
     try {
-      const apiMessages = updated
-        .slice(1)
-        .slice(-20)
-        .map(m => ({ role: m.role, content: m.content }));
-
       const res = await fetch('/api/anthropic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-5-5',
-          max_tokens: 1000,
-          system: buildContext(),
-          messages: apiMessages,
-        }),
-      });
-
-      const data = await res.json();
-      const reply = data.content?.[0]?.text || 'Sorry, I could not process that.';
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-    } catch (err) {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: 'Something went wrong. Please try again.',
-        error: true,
-      }]);
+        body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 1000, system: buildContext(), messages: next.slice(-20) }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || `Error ${res.status}`)
+      setMessages((m) => [...m, { role: 'assistant', content: data.content?.[0]?.text || 'Sorry, I could not work that out.' }])
+    } catch {
+      setMessages((m) => [...m, { role: 'assistant', content: 'Something went wrong reaching Butler. Please try again.' }])
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  const send = () => sendMessage(input);
-  const handleChipClick = (chipText) => sendMessage(chipText);
+  const listen = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) { inputRef.current?.focus(); return }
+    const rec = new SR()
+    rec.lang = 'en-GB'
+    rec.interimResults = false
+    rec.onresult = (e) => setInput((v) => `${v ? `${v} ` : ''}${e.results[0][0].transcript}`)
+    rec.onend = () => setListening(false)
+    setListening(true)
+    rec.start()
+  }
 
-  /* ================================================================ */
-  /*  Render                                                           */
-  /* ================================================================ */
+  const share = top1 && top2 ? top1[1] / (top1[1] + top2[1]) : top1 ? 1 : 0
+
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: mobile ? 'calc(100vh - 100px)' : 'calc(100vh - 48px)',
-      backgroundColor: T.surface,
-      fontFamily: T.fontSans,
-      padding: '0 16px',
-    }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100dvh - env(safe-area-inset-top, 0px))' }}>
+      <Header {...header} />
 
-      {/* ---- Header row: avatar + three-dots ---- */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '16px 0 12px',
-      }}>
-        <div style={{
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          backgroundColor: T.teal,
-          color: T.cream,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 13,
-          fontWeight: T.semibold,
-          fontFamily: T.fontSans,
-          letterSpacing: '0.5px',
-          flexShrink: 0,
-        }}>
-          ED
-        </div>
-        <button style={{
-          background: 'none',
-          border: 'none',
-          padding: 4,
-          cursor: 'pointer',
-          color: T.textMuted,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }} aria-label="Menu">
-          <MoreHorizontal size={20} />
-        </button>
+      {/* Title 23:6329 */}
+      <div style={{ display: 'flex', gap: 8, padding: '16px 20px', ...sans(30, 400, { lineHeight: '34px', letterSpacing: -0.9 }) }}>
+        <span style={{ color: C.ink55 }}>Ask your</span>
+        <span style={{ color: C.ink, fontWeight: 500 }}>Butler</span>
       </div>
 
-      {/* ---- Title ---- */}
-      <div style={{
-        fontSize: 28,
-        color: T.deepTeal,
-        fontFamily: T.fontSans,
-        fontWeight: T.regular,
-        margin: '0 0 16px',
-        lineHeight: 1.2,
-      }}>
-        Ask your <span style={{ fontWeight: T.semibold }}>Butler</span>
-      </div>
+      {/* Conversation 23:6332 */}
+      <div ref={scrollRef} className="pb-noscroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, padding: '0 20px 8px' }}>
+        <ButlerBubble label>
+          <p style={sans(14, 400, { lineHeight: '20px', color: C.blush })}>{introText}</p>
+          {top1 && (
+            <>
+              <Barcode bars={80} fraction={share} on={C.amber} off={C.blush35} height={20} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <span style={mono(9, 400, { letterSpacing: 0.54, color: C.amber })}>{top1[0].toUpperCase()} {Math.round(top1[1])}</span>
+                {top2 && <span style={mono(9, 400, { letterSpacing: 0.54, color: C.blush80 })}>{top2[0].toUpperCase()} {Math.round(top2[1])}</span>}
+              </div>
+            </>
+          )}
+        </ButlerBubble>
 
-      {/* ---- Chat area ---- */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '4px 0',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-      }}>
-        {messages.map((m, i) => (
-          m.role === 'user' ? (
-            /* ---- User bubble ---- */
-            <div key={i} style={{
-              alignSelf: 'flex-end',
-              backgroundColor: '#ffffff',
-              color: T.text,
-              border: `1px solid ${T.borderLight}`,
-              borderRadius: `${T.radiusMd}px ${T.radiusMd}px 4px ${T.radiusMd}px`,
-              padding: '10px 14px',
-              fontSize: 14,
-              lineHeight: 1.55,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              fontFamily: T.fontSans,
-              maxWidth: '80%',
-            }}>
-              {m.content}
-            </div>
-          ) : (
-            /* ---- Assistant bubble ---- */
-            <div key={i} style={{
-              alignSelf: 'flex-start',
-              backgroundColor: T.teal,
-              color: T.warm,
-              borderRadius: `${T.radiusMd}px ${T.radiusMd}px ${T.radiusMd}px 4px`,
-              padding: '12px 14px',
-              fontSize: 14,
-              lineHeight: 1.55,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              fontFamily: T.fontSans,
-              width: '100%',
-              boxSizing: 'border-box',
-            }}>
-              {/* PLANTAIN BUTLER mono label */}
-              <span style={{
-                ...monoLabel,
-                color: T.textOnTealMuted,
-                marginBottom: 6,
-                display: 'block',
-              }}>
-                PLANTAIN BUTLER
-              </span>
-
-              {/* Message content */}
-              {m.error ? (
-                <span style={{ color: T.error }}>{m.content}</span>
-              ) : (
-                m.content
-              )}
-
-              {/* Barcode visualization for initial message */}
-              {m.showBarcode && topCategories.length > 0 && (
-                <CategoryBarcode categories={topCategories} />
-              )}
-
-              {/* Action buttons inside assistant bubble */}
-              {m.showBarcode && (
-                <div style={{
-                  display: 'flex',
-                  gap: 8,
-                  marginTop: 12,
-                }}>
-                  <button style={{
-                    padding: '7px 16px',
-                    fontSize: 13,
-                    fontFamily: T.fontSans,
-                    fontWeight: T.medium,
-                    color: T.amber,
-                    backgroundColor: 'transparent',
-                    border: `1px solid ${T.amber}`,
-                    borderRadius: T.radiusPill,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    + Add to list
-                  </button>
-                  <button style={{
-                    padding: '7px 16px',
-                    fontSize: 13,
-                    fontFamily: T.fontSans,
-                    fontWeight: T.medium,
-                    color: T.warm,
-                    backgroundColor: 'transparent',
-                    border: `1px solid rgba(244,221,211,0.4)`,
-                    borderRadius: T.radiusPill,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    Not now
-                  </button>
-                </div>
-              )}
-            </div>
-          )
-        ))}
-
-        {/* Loading indicator */}
-        {loading && (
-          <div style={{
-            alignSelf: 'flex-start',
-            backgroundColor: T.teal,
-            color: T.warm,
-            borderRadius: `${T.radiusMd}px ${T.radiusMd}px ${T.radiusMd}px 4px`,
-            padding: '12px 14px',
-            fontSize: 14,
-            lineHeight: 1.55,
-            fontFamily: T.fontSans,
-            width: '100%',
-            boxSizing: 'border-box',
-          }}>
-            <span style={{
-              ...monoLabel,
-              color: T.textOnTealMuted,
-              marginBottom: 6,
-              display: 'block',
-            }}>
-              PLANTAIN BUTLER
-            </span>
-            <span style={{ color: T.textOnTealMuted }}>Thinking...</span>
-          </div>
+        {lowItem && suggestion !== 'dismissed' && (
+          <ButlerBubble>
+            <p style={sans(14, 400, { lineHeight: '20px', color: C.blush })}>
+              {suggestion === 'added' ? `Done — ${lowItem.name} is on your list.` : suggestionText}
+            </p>
+            {suggestion === 'open' && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => { addToShoppingList([{ name: lowItem.name, qty: 1 }]); setSuggestion('added') }}
+                  style={{ ...reset, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: C.amber }}>
+                  <Icon name="plus@14" />
+                  <span style={sans(13, 500, { color: C.ink })}>Add to list</span>
+                </button>
+                <button onClick={() => setSuggestion('dismissed')} style={{ ...reset, padding: '8px 16px', border: `1px solid ${C.blush35}` }}>
+                  <span style={sans(13, 500, { color: C.blush })}>Not now</span>
+                </button>
+              </div>
+            )}
+          </ButlerBubble>
         )}
-        <div ref={endRef} />
+
+        {messages.map((m, i) => m.role === 'user'
+          ? <UserBubble key={i} text={m.content} />
+          : <ButlerBubble key={i}><RichText text={m.content} color={C.blush} /></ButlerBubble>)}
+        {loading && <Typing />}
       </div>
 
-      {/* ---- Suggestion chips ---- */}
-      <div style={{
-        display: 'flex',
-        gap: 8,
-        padding: '8px 0 4px',
-        flexWrap: 'wrap',
-      }}>
-        {SUGGESTION_CHIPS.map((chip) => (
-          <button
-            key={chip}
-            style={{
-              padding: '8px 16px',
-              fontSize: 13,
-              fontFamily: T.fontSans,
-              fontWeight: T.medium,
-              color: T.text,
-              backgroundColor: T.surface,
-              border: `1px solid ${T.border}`,
-              borderRadius: T.radiusPill,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-            onClick={() => handleChipClick(chip)}
-            disabled={loading}
-          >
-            {chip}
-          </button>
-        ))}
-      </div>
-
-      {/* ---- Input bar ---- */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '12px 0',
-        backgroundColor: T.surface,
-      }}>
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          backgroundColor: '#ffffff',
-          border: `1px solid ${T.border}`,
-          borderRadius: T.radiusMd,
-          overflow: 'hidden',
-        }}>
-          <input
-            style={{
-              flex: 1,
-              margin: 0,
-              padding: '10px 14px',
-              fontSize: 14,
-              fontFamily: T.fontSans,
-              backgroundColor: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: T.text,
-            }}
-            placeholder="Ask anything..."
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && send()}
-          />
-          <button style={{
-            background: 'none',
-            border: 'none',
-            padding: '8px 10px',
-            cursor: 'pointer',
-            color: T.textMuted,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }} aria-label="Voice input">
-            <Mic size={18} />
-          </button>
+      {/* Composer 23:6432 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '8px 20px 104px' }}>
+        <div className="pb-noscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+          {CHIPS.map((c) => (
+            <button key={c} onClick={() => send(c)} style={{ ...reset, padding: '8px 12px', border: `1px solid ${C.ink22}`, flexShrink: 0 }}>
+              <span style={sans(12, 400, { color: C.ink75, whiteSpace: 'nowrap' })}>{c}</span>
+            </button>
+          ))}
         </div>
-        <button
-          style={{
-            width: 42,
-            height: 42,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            backgroundColor: T.amber,
-            color: T.accentText,
-            border: 'none',
-            borderRadius: T.radiusMd,
-            cursor: 'pointer',
-          }}
-          onClick={send}
-          disabled={loading}
-          aria-label="Send"
-        >
-          <Send size={18} />
-        </button>
+        <form onSubmit={(e) => { e.preventDefault(); send(input) }}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, height: 52, padding: '0 8px 0 16px', background: C.composer }}>
+          <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask anything…" aria-label="Message Butler"
+            style={{ ...sans(14, 400, { color: C.ink }), flex: 1, minWidth: 0, height: '100%' }} />
+          <button type="button" aria-label="Dictate" onClick={listen} style={{ ...reset, display: 'flex', opacity: listening ? 0.5 : 1 }}>
+            <Icon name="mic@18" />
+          </button>
+          <button type="submit" aria-label="Send" disabled={loading}
+            style={{ ...reset, width: 40, height: 40, background: C.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Icon name="send@16" color={C.amber} />
+          </button>
+        </form>
       </div>
     </div>
-  );
+  )
 }

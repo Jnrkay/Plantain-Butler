@@ -1,300 +1,105 @@
-import React, { useState } from 'react';
-import { Check, MoreHorizontal, ArrowUpRight } from 'lucide-react';
-import { CATEGORIES } from '../lib/constants';
-import { uid } from '../lib/utils';
-import { inputSm, labelStyle, btnPrimary } from '../lib/styles';
-import { T, monoLabel } from '../lib/theme';
+// A5 · Shopping list (Figma 23:6209)
+import { useState } from 'react'
+import { C, TX, sans, mono, TAB_CLEARANCE } from '../lib/theme'
+import { sum, isLow } from '../lib/derive'
+import { Header, TitleRow, AddButton, Money, Checkbox, Icon, reset } from './ui'
 
-export default function ShoppingPage({ shoppingList, saveSL, genShoppingList, inventory, mobile }) {
-  const [showAdd, setShowAdd] = useState(false);
-  const [name, setName] = useState('');
-  const [est, setEst] = useState('');
-  const [cat, setCat] = useState(CATEGORIES[0] || '');
+function ListItem({ item, low, onToggle, onOpen }) {
+  const done = !!item.checked
+  const qty = Number(item.qty) || 1
+  const total = (Number(item.estPrice) || 0) * qty
+  const tag = done ? 'ADDED' : low ? 'LOW STOCK' : 'USUAL'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, height: 64, padding: '12px 16px', background: done ? C.rowFaded : C.row }}>
+      <Checkbox checked={done} onClick={onToggle} label={`${item.name} in cart`} />
+      <button onClick={onOpen} style={{ ...reset, flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 16, height: '100%' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{
+            ...sans(15, 500, { color: done ? C.ink45 : C.ink }), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            textDecoration: done ? 'line-through' : 'none',
+          }}>{item.name}</span>
+          <span style={{ ...TX.micro, color: done ? C.ink55 : low ? C.ember : C.ink80 }}>{tag} · ×{qty}</span>
+        </div>
+        <Money value={total} size={20} tracking={-0.4} color={done ? C.ink45 : C.ink} muted={done ? C.ink28 : C.ink55} />
+      </button>
+    </div>
+  )
+}
 
-  const checked = shoppingList.filter(i => i.checked).length;
-  const total = shoppingList.length;
-  const estTotal = shoppingList.reduce((s, i) => s + (i.estPrice || 0), 0);
+export default function ShoppingPage({ header, shoppingList, saveSL, genShoppingList, inventory, profile, openSheet }) {
+  const [flash, setFlash] = useState('')
+  const lowOf = (name) => isLow(inventory.find((i) => i.name.toLowerCase().trim() === String(name).toLowerCase().trim()))
 
-  // Build a set of inventory item names that are low/medium stock
-  const lowStockNames = new Set(
-    (inventory || [])
-      .filter(i => i.status === 'low' || i.status === 'medium' || i.status === 'out')
-      .map(i => i.name?.toLowerCase())
-  );
+  const sorted = [...shoppingList].sort((a, b) => Number(!!a.checked) - Number(!!b.checked))
+  const inCart = shoppingList.filter((s) => s.checked).length
+  const est = sum(shoppingList, (s) => (Number(s.estPrice) || 0) * (Number(s.qty) || 1))
 
-  const isLowStock = (item) => lowStockNames.has(item.name?.toLowerCase());
+  const storeCounts = {}
+  shoppingList.forEach((s) => { if (s.store) storeCounts[s.store] = (storeCounts[s.store] || 0) + 1 })
+  const store = Object.keys(storeCounts).sort((a, b) => storeCounts[b] - storeCounts[a])[0] || profile?.stores?.[0]
 
-  const toggle = id => {
-    saveSL(shoppingList.map(i => i.id === id ? { ...i, checked: !i.checked } : i));
-  };
-
-  const remove = id => {
-    saveSL(shoppingList.filter(i => i.id !== id));
-  };
-
-  const add = () => {
-    if (!name.trim()) return;
-    saveSL([
-      ...shoppingList,
-      { id: uid(), name: name.trim(), estPrice: parseFloat(est) || 0, category: cat, checked: false },
-    ]);
-    setName('');
-    setEst('');
-    setShowAdd(false);
-  };
-
-  const fmtNum = (n) => Number(n || 0).toFixed(2);
+  const toggle = (id) => saveSL(shoppingList.map((s) => (s.id === id ? { ...s, checked: !s.checked } : s)))
+  const generate = () => {
+    const n = genShoppingList()
+    setFlash(n ? `Added ${n} ${n === 1 ? 'item' : 'items'} from low stock` : 'Nothing is running low right now')
+    setTimeout(() => setFlash(''), 2600)
+  }
 
   return (
-    <div style={{ padding: mobile ? '20px 16px' : '32px 40px', maxWidth: 800, margin: '0 auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <Header {...header} />
+      <TitleRow title="Shopping list">
+        <AddButton label="Add to list" onClick={() => openSheet('shopItem')} />
+      </TitleRow>
 
-      {/* 1. Header row: Avatar + menu */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          backgroundColor: T.teal, color: T.cream,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 13, fontWeight: T.semibold, fontFamily: T.fontSans,
-          letterSpacing: '0.3px',
-        }}>
-          ED
+      {/* Auto-generate card 23:6236 */}
+      <div style={{ padding: '0 20px 16px' }}>
+        <button onClick={generate} style={{ ...reset, width: '100%', background: C.amber, padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+            <span style={TX.label}>AUTO-GENERATE</span>
+            <span style={TX.label}>FROM STOCK</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%' }}>
+            <span style={sans(18, 500, { lineHeight: '22px', letterSpacing: -0.36, color: C.ink, maxWidth: 230 })}>
+              {flash || 'Build my list from low stock and my usual run'}
+            </span>
+            <span style={{ width: 44, height: 44, background: C.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon name="arrow@18" color={C.amber} />
+            </span>
+          </div>
+        </button>
+      </div>
+
+      {/* Estimate 23:6246 */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, padding: '4px 20px 16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ ...TX.label, whiteSpace: 'nowrap' }}>{shoppingList.length} {shoppingList.length === 1 ? 'ITEM' : 'ITEMS'} · {inCart} IN CART</span>
+          <span style={sans(12, 400, { color: C.ink80, whiteSpace: 'nowrap' })}>{store ? `Estimated at ${store}` : 'Estimated from last prices'}</span>
         </div>
-        <button style={{
-          background: 'none', border: 'none', cursor: 'pointer', padding: 4,
-          color: T.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <MoreHorizontal size={22} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+          <span style={mono(10, 400, { color: C.ink80, whiteSpace: 'nowrap' })}>EST. GHS</span>
+          <Money value={est} size={32} tracking={-0.96} />
+        </div>
       </div>
 
-      {/* 2. Title row: "Shopping list" + amber "+" button */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h2 style={{
-          margin: 0, fontSize: 28, fontWeight: T.semibold,
-          color: T.text, fontFamily: T.fontSans, lineHeight: 1.1,
-        }}>
-          Shopping list
-        </h2>
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          style={{
-            width: 40, height: 40, borderRadius: 10,
-            backgroundColor: T.amber, border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 24, fontWeight: T.light, color: T.accentText, lineHeight: 1,
-          }}
-        >
-          +
-        </button>
-      </div>
-
-      {/* Add form (shown when "+" is tapped) */}
-      {showAdd && (
-        <div style={{
-          display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap',
-          padding: 12, borderRadius: T.radiusMd, marginBottom: 16,
-          backgroundColor: T.surfaceCard, border: `1px solid ${T.borderLight}`,
-          boxShadow: T.shadowSm,
-        }}>
-          <div style={{ flex: 1, minWidth: 120 }}>
-            <label style={labelStyle}>Item</label>
-            <input
-              style={inputSm}
-              placeholder="Item name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && add()}
-            />
+      {/* List 23:6253 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: `0 20px ${TAB_CLEARANCE}px` }}>
+        {sorted.map((s) => (
+          <ListItem key={s.id} item={s} low={lowOf(s.name)} onToggle={() => toggle(s.id)} onOpen={() => openSheet('shopItem', { itemId: s.id })} />
+        ))}
+        {shoppingList.length === 0 && (
+          <div style={{ background: C.row, padding: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={TX.rowName}>Your list is empty</span>
+            <span style={TX.small}>Tap the card above to fill it from low stock, or + to add something.</span>
           </div>
-          <div style={{ width: 100 }}>
-            <label style={labelStyle}>Est. Price</label>
-            <input
-              style={inputSm}
-              type="number"
-              placeholder="0.00"
-              value={est}
-              onChange={e => setEst(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && add()}
-            />
-          </div>
-          <div style={{ width: 130 }}>
-            <label style={labelStyle}>Category</label>
-            <select
-              style={{ ...inputSm, appearance: 'none' }}
-              value={cat}
-              onChange={e => setCat(e.target.value)}
-            >
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <button
-            style={{ ...btnPrimary, padding: '7px 16px', fontSize: 13, marginBottom: 1, borderRadius: T.radiusMd }}
-            onClick={add}
-          >
-            Add
+        )}
+        {inCart > 0 && (
+          <button onClick={() => saveSL(shoppingList.filter((s) => !s.checked))}
+            style={{ ...reset, alignSelf: 'flex-start', padding: '4px 0', ...sans(13, 500, { color: C.ink80, textDecoration: 'underline', textUnderlineOffset: 3 }) }}>
+            Clear {inCart} ticked {inCart === 1 ? 'item' : 'items'}
           </button>
-        </div>
-      )}
-
-      {/* 3. Auto-Generate CTA card */}
-      <div style={{
-        backgroundColor: T.surfaceTeal,
-        borderRadius: 16,
-        padding: '16px 18px',
-        marginBottom: 24,
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>AUTO-GENERATE</span>
-            <span style={{ ...monoLabel, color: T.textOnTealMuted }}>FROM STOCK</span>
-          </div>
-          <div style={{
-            fontSize: 16, color: T.textOnTeal, fontFamily: T.fontSans,
-            lineHeight: 1.35, fontWeight: T.regular,
-          }}>
-            Build my list from low stock and my usual run
-          </div>
-        </div>
-        <button
-          onClick={genShoppingList}
-          style={{
-            width: 40, height: 40, borderRadius: 8, flexShrink: 0,
-            backgroundColor: T.amber, border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <ArrowUpRight size={20} color={T.accentText} strokeWidth={2.5} />
-        </button>
+        )}
       </div>
-
-      {/* 4. Summary line */}
-      {total > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-          marginBottom: 20, padding: '0 2px',
-        }}>
-          <div>
-            <span style={{ ...monoLabel, color: T.textLight }}>
-              {total} ITEM{total !== 1 ? 'S' : ''} &middot; {checked} IN CART
-            </span>
-            <div style={{
-              fontSize: 12, color: T.textMuted, fontFamily: T.fontSans, marginTop: 3,
-            }}>
-              Estimated at Adez Mart
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-            <span style={{ ...monoLabel, color: T.textLight }}>EST.</span>
-            <span style={{
-              fontSize: 13, color: T.textMuted, fontFamily: T.fontSans,
-              fontWeight: T.regular, marginRight: 2,
-            }}>
-              GHS
-            </span>
-            <span style={{
-              fontSize: 36, fontWeight: T.light, color: T.text,
-              fontFamily: T.fontSans, lineHeight: 1, letterSpacing: '-1.5px',
-            }}>
-              {fmtNum(estTotal)}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* 5. Shopping items */}
-      {total === 0 ? (
-        <div style={{
-          textAlign: 'center', padding: '48px 16px',
-          color: T.textLight, fontFamily: T.fontSans, fontSize: 14,
-        }}>
-          Your shopping list is empty. Tap the auto-generate card above to build one from your stock levels.
-        </div>
-      ) : (
-        <div>
-          {shoppingList.map((item, idx) => {
-            const low = isLowStock(item);
-            const done = item.checked;
-            return (
-              <div key={item.id}>
-                <div
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 14,
-                    padding: '14px 0',
-                  }}
-                >
-                  {/* Checkbox */}
-                  <div
-                    onClick={() => toggle(item.id)}
-                    style={{
-                      width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                      border: `2px solid ${done ? T.teal : T.border}`,
-                      backgroundColor: done ? T.teal : 'transparent',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      cursor: 'pointer', transition: 'all 0.15s',
-                    }}
-                  >
-                    {done && <Check size={14} color="#fff" strokeWidth={3} />}
-                  </div>
-
-                  {/* Name + label */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 15, fontWeight: T.semibold, color: T.text,
-                      fontFamily: T.fontSans,
-                      textDecoration: done ? 'line-through' : 'none',
-                      opacity: done ? 0.45 : 1,
-                      lineHeight: 1.2,
-                    }}>
-                      {item.name}
-                    </div>
-                    <div style={{
-                      ...monoLabel,
-                      fontSize: 9.5,
-                      marginTop: 3,
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      color: T.textLight,
-                    }}>
-                      {done ? (
-                        <>
-                          <span style={{ color: T.textLight }}>ADDED</span>
-                          <span>&middot;</span>
-                          <span>&times;{item.qty || 1}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ color: low ? T.warning : T.textLight }}>
-                            {low ? 'LOW STOCK' : 'USUAL'}
-                          </span>
-                          <span>&middot;</span>
-                          <span>&times;{item.qty || 1}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Price */}
-                  <span style={{
-                    fontSize: 18, fontWeight: T.medium, color: done ? T.textLight : T.text,
-                    fontFamily: T.fontSans, whiteSpace: 'nowrap',
-                    opacity: done ? 0.45 : 1,
-                  }}>
-                    {fmtNum(item.estPrice || 0)}
-                  </span>
-                </div>
-                {/* Separator line between items */}
-                {idx < shoppingList.length - 1 && (
-                  <div style={{
-                    height: 1,
-                    backgroundColor: T.borderLight,
-                    marginLeft: 36,
-                  }} />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
-  );
+  )
 }

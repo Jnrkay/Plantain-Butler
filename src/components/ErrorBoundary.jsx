@@ -1,5 +1,5 @@
 import React from 'react'
-import { T } from '../lib/theme'
+import { C, TX, sans, mono } from '../lib/theme'
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -16,47 +16,24 @@ export default class ErrorBoundary extends React.Component {
   }
 
   render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', minHeight: '60vh', padding: 32,
-          background: T.surface, fontFamily: T.fontSans, textAlign: 'center',
-        }}>
-          <div style={{
-            background: T.surfaceCard, border: `1px solid ${T.borderLight}`,
-            borderRadius: T.radiusMd, padding: 32, maxWidth: 420, width: '100%',
-            boxShadow: T.shadowMd,
-          }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🍌</div>
-            <h2 style={{ margin: '0 0 8px', fontSize: 20, color: T.text, fontWeight: T.semibold }}>Something went wrong</h2>
-            <p style={{ color: T.textMuted, fontSize: 14, margin: '0 0 20px', fontFamily: T.fontSans }}>
-              Plantain Butler hit a snag. Your data is safe in local storage.
-            </p>
-            <button
-              onClick={() => {
-                this.setState({ hasError: false, error: null })
-                window.location.reload()
-              }}
-              style={{
-                background: T.amber, color: T.accentText, border: 'none',
-                borderRadius: T.radiusMd, padding: '10px 24px', fontSize: 14,
-                fontWeight: T.semibold, cursor: 'pointer', fontFamily: T.fontSans,
-              }}
-            >
-              Reload App
-            </button>
-            <details style={{ marginTop: 20, color: T.textLight, fontSize: 12, maxWidth: 400, textAlign: 'left' }}>
-              <summary style={{ cursor: 'pointer' }}>Error details</summary>
-              <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 8, color: T.error, fontFamily: T.fontMono, fontSize: 11 }}>
-                {this.state.error?.toString()}
-              </pre>
-            </details>
-          </div>
+    if (!this.state.hasError) return this.props.children
+    return (
+      <div style={{ minHeight: '100dvh', background: C.cream, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: C.white, padding: 20, maxWidth: 330, width: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <span style={sans(22, 500, { letterSpacing: -0.44, color: C.ink })}>Something went wrong</span>
+          <p style={sans(14, 400, { lineHeight: '20px', color: C.ink70 })}>Plantain Butler hit a snag. Your data is safe on this device.</p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ height: 48, background: C.amber, border: 'none', cursor: 'pointer', ...sans(15, 500, { color: C.ink }) }}
+          >
+            Reload
+          </button>
+          <details>
+            <summary style={{ ...TX.label, cursor: 'pointer' }}>ERROR DETAILS</summary>
+            <pre style={{ ...mono(11), whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 8, color: C.ember }}>{this.state.error?.toString()}</pre>
+          </details>
         </div>
-      )
-    }
-
-    return this.props.children
+      </div>
+    )
   }
 }
