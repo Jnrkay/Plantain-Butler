@@ -58,18 +58,19 @@ export default async function handler(req, res) {
     t.otherUserCannotUpdateTheirs = upd.rowCount === 0 ? 'ok' : 'FAIL'
     const del = await client.query(`delete from transactions where id = 't-tx-a'`)
     t.otherUserCannotDeleteTheirs = del.rowCount === 0 ? 'ok' : 'FAIL'
-    await expectFail('clientCannotBumpAiUsage', 'select public.bump_ai_usage($1, 100)', [b])
     await expectFail('clientCannotReadAiUsage', 'select * from ai_usage')
+    const b1 = (await client.query('select public.bump_ai_usage() as n')).rows[0].n
+    const b2 = (await client.query('select public.bump_ai_usage() as n')).rows[0].n
+    t.aiCounterCountsOwnUser = b1 === 1 && b2 === 2 ? 'ok' : `FAIL ${b1},${b2}`
 
     await client.query('reset role')
     await client.query('set local role anon')
     await expectFail('anonCannotReadItems', 'select * from inventory_items')
     await expectFail('anonCannotReadHouseholds', 'select * from households')
 
-    await client.query('reset role')
-    const allowed = (await client.query('select public.bump_ai_usage($1, 1) as a', [a])).rows[0].a
-    const blocked = (await client.query('select public.bump_ai_usage($1, 1) as a', [a])).rows[0].a
-    t.aiDailyCapWorks = allowed === true && blocked === false ? 'ok' : 'FAIL'
+    await expectFail('anonCannotBumpAiUsage', 'select public.bump_ai_usage()')
+    await as(a)
+    t.aiCounterSeparatePerUser = (await client.query('select public.bump_ai_usage() as n')).rows[0].n === 1 ? 'ok' : 'FAIL'
 
     await client.query('rollback')
     out.allPassed = Object.values(t).every((v) => String(v).startsWith('ok'))
@@ -79,6 +80,8 @@ export default async function handler(req, res) {
   } finally {
     await client.end().catch(() => {})
   }
+  // Public, browser-safe values (they ship inside the app anyway)
+  out.publicConfig = { url: process.env.SUPABASE_URL || null, anonKey: process.env.SUPABASE_ANON_KEY || null }
   res.setHeader('Cache-Control', 'no-store')
   res.status(200).json(out)
 }
