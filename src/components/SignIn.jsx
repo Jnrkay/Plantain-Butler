@@ -185,6 +185,10 @@ export default function SignIn() {
           ) : (
             <span style={{ ...sans(12, 400, { color: C.ink70 }), textAlign: 'center' }}>No password? Leave it blank and we’ll email you a link.</span>
           )}
+          <button type="button" disabled={!valid} onClick={() => { setError(''); setCode(''); setStep(2) }}
+            style={{ ...reset, alignSelf: 'center', ...sans(13, 500, { color: valid ? C.ink80 : C.ink45, textDecoration: 'underline', textUnderlineOffset: 3 }) }}>
+            I already have a sign-in link or code
+          </button>
         </form>
       </Shell>
     )
