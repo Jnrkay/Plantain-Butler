@@ -4,6 +4,7 @@ import { C, TX, sans, mono } from '../lib/theme'
 import { today, monthKey } from '../lib/utils'
 import { lineTotal, sum, money, monthlyBudget, greeting, isLow, txInMonth, shiftMonth, stockOf, STOCK } from '../lib/derive'
 import { Header, Barcode, Icon, reset } from './ui'
+import { callButler } from '../lib/ai'
 
 const CHIPS = ['This month vs last', 'Optimise budget']
 const STORE_KEY = 'pb-butler-chat'
@@ -119,16 +120,10 @@ Answer in 2–5 short sentences or a short list. No markdown headings.`
     setInput('')
     setLoading(true)
     try {
-      const res = await fetch('/api/anthropic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 1000, system: buildContext(), messages: next.slice(-20) }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || `Error ${res.status}`)
+      const data = await callButler({ max_tokens: 1000, system: buildContext(), messages: next.slice(-20) })
       setMessages((m) => [...m, { role: 'assistant', content: data.content?.[0]?.text || 'Sorry, I could not work that out.' }])
-    } catch {
-      setMessages((m) => [...m, { role: 'assistant', content: 'Something went wrong reaching Butler. Please try again.' }])
+    } catch (e) {
+      setMessages((m) => [...m, { role: 'assistant', content: e?.message || 'Something went wrong reaching Butler. Please try again.' }])
     } finally {
       setLoading(false)
     }

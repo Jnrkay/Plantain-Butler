@@ -2,11 +2,13 @@
 import { useRef } from 'react'
 import { C, sans, mono } from '../lib/theme'
 import { money, initials, monthlyBudget } from '../lib/derive'
-import { exportAllData, importData } from '../lib/storage'
+import { exportAllData } from '../lib/storage'
 import { Avatar, Icon, Overlay, reset } from './ui'
 
-export const exportBackup = () => {
-  const blob = new Blob([JSON.stringify(exportAllData(), null, 2)], { type: 'application/json' })
+// Pass `data` to export something other than what's currently on screen (e.g. pre-sign-in data)
+export const exportBackup = (data) => {
+  const payload = data ? { ...data, _exportedAt: new Date().toISOString(), _version: 1 } : exportAllData()
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -31,7 +33,15 @@ function Item({ icon, label, meta, onClick, danger, divider }) {
   )
 }
 
-export default function OverflowMenu({ profile, openSheet, onClose }) {
+const syncLabel = (sync) => {
+  if (!sync) return ''
+  if (sync.state === 'offline') return sync.pending ? `Offline · ${sync.pending} change${sync.pending === 1 ? '' : 's'} waiting` : 'Offline · saved on this phone'
+  if (sync.state === 'error') return sync.pending ? `Couldn’t sync ${sync.pending} change${sync.pending === 1 ? '' : 's'} · retrying` : 'Sync paused · retrying'
+  if (sync.state === 'syncing' || sync.pending) return 'Syncing…'
+  return 'Synced'
+}
+
+export default function OverflowMenu({ profile, openSheet, onClose, account, saveProfile, saveTx, saveInv, saveBudgets, saveSL }) {
   const fileRef = useRef(null)
   const budget = monthlyBudget(profile)
 
@@ -41,8 +51,15 @@ export default function OverflowMenu({ profile, openSheet, onClose }) {
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        importData(JSON.parse(ev.target.result))
-        window.location.reload()
+        const d = JSON.parse(ev.target.result)
+        if (!d || typeof d !== 'object') throw new Error('empty file')
+        // Saving through the store uploads the imported data to the account
+        if (d.profile) saveProfile({ ...d.profile, onboarded: true })
+        if (d.budgets) saveBudgets(d.budgets)
+        if (Array.isArray(d.inventory)) saveInv(d.inventory)
+        if (Array.isArray(d.transactions)) saveTx(d.transactions)
+        if (Array.isArray(d.shoppingList)) saveSL(d.shoppingList)
+        onClose()
       } catch (err) {
         alert(`That file isn't a Plantain Butler backup (${err.message}).`)
       }
@@ -65,7 +82,7 @@ export default function OverflowMenu({ profile, openSheet, onClose }) {
           <Avatar text={initials(profile?.name)} size={32} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={sans(14, 500, { color: C.ink })}>{String(profile?.name || '').trim().split(/\s+/)[0] || 'Your household'}</span>
-            <span style={sans(11, 400, { color: C.ink80 })}>Profile &amp; settings</span>
+            <span style={sans(11, 400, { color: account?.sync?.state === 'error' ? C.ember : C.ink80 })}>{account ? syncLabel(account.sync) : 'Profile & settings'}</span>
           </div>
         </button>
         <Item icon="user" label="Household profile" onClick={() => openSheet('profile')} />
@@ -75,6 +92,10 @@ export default function OverflowMenu({ profile, openSheet, onClose }) {
         <Item icon="down" label="Export backup" divider onClick={() => { exportBackup(); onClose() }} />
         <Item icon="up" label="Import backup" onClick={() => fileRef.current?.click()} />
         <Item icon="trash" label="Clear data…" danger divider onClick={() => openSheet('clear')} />
+        {account && (
+          <Item icon="signout" label="Sign out" meta={account.email ? account.email.split('@')[0] : undefined} divider
+            onClick={() => openSheet('signOut')} />
+        )}
         <input ref={fileRef} type="file" accept=".json,application/json" onChange={onImport} style={{ display: 'none' }} />
       </div>
     </Overlay>

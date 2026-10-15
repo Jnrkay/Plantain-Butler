@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { DEFAULT_PROFILE } from './lib/constants'
-import { save, load } from './lib/storage'
+import { useHouseholdStore } from './lib/store'
 import { uid, today, monthKey } from './lib/utils'
 import { C, sans } from './lib/theme'
 import { initials as toInitials, lineTotal, sum, isLow } from './lib/derive'
@@ -15,6 +15,9 @@ import ShoppingPage from './components/ShoppingPage'
 import AssistantPage from './components/AssistantPage'
 import OverflowMenu from './components/OverflowMenu'
 import Sheets from './components/Sheets'
+import SignIn from './components/SignIn'
+import LinkData from './components/LinkData'
+import { Button } from './components/ui'
 
 // Tab bar (23:5697) — labels and icons exactly as in Figma
 const TABS = [
@@ -56,33 +59,26 @@ function TabBar({ page, setPage }) {
   )
 }
 
+function Splash({ text, action, secondary }) {
+  return (
+    <div style={{ minHeight: '100dvh', background: C.cream, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ width: '100%', maxWidth: 330, display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'stretch' }}>
+        {text && <p style={sans(14, 400, { color: C.ink70, textAlign: 'center', lineHeight: '20px' })}>{text}</p>}
+        {action && <Button onClick={action.onClick}>{action.label}</Button>}
+        {secondary && <Button variant="outline" onClick={secondary.onClick}>{secondary.label}</Button>}
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [page, setPageRaw] = useState('dashboard')
-  const [profile, setProfile] = useState(null)
-  const [transactions, setTransactions] = useState([])
-  const [inventory, setInventory] = useState([])
-  const [budgets, setBudgets] = useState({})
-  const [shoppingList, setShoppingList] = useState([])
-  const [loading, setLoading] = useState(true)
   const [sheet, setSheet] = useState(null) // { type, ...props }
   const [menuOpen, setMenuOpen] = useState(false)
-
-  useEffect(() => {
-    setProfile(load('pb-profile', null))
-    setTransactions(load('pb-transactions', []))
-    setInventory(load('pb-inventory', []))
-    setBudgets(load('pb-budgets', {}))
-    setShoppingList(load('pb-shopping-list', []))
-    setLoading(false)
-  }, [])
+  const store = useHouseholdStore()
+  const { profile, transactions, inventory, budgets, shoppingList, saveProfile, saveTx, saveInv, saveBudgets, saveSL } = store
 
   const setPage = useCallback((p) => { setPageRaw(p); setMenuOpen(false); window.scrollTo(0, 0) }, [])
-
-  const saveProfile = (v) => { setProfile(v); save('pb-profile', v) }
-  const saveTx = (v) => { setTransactions(v); save('pb-transactions', v) }
-  const saveInv = (v) => { setInventory(v); save('pb-inventory', v) }
-  const saveBudgets = (v) => { setBudgets(v); save('pb-budgets', v) }
-  const saveSL = (v) => { setShoppingList(v); save('pb-shopping-list', v) }
 
   const addTransaction = (items, store, date) => {
     const newTx = items.map((it) => ({
@@ -152,7 +148,12 @@ export default function App() {
     }
   }, [transactions, inventory])
 
-  if (loading) return <div style={{ minHeight: '100dvh', background: C.cream }} />
+  if (store.phase === 'loading' || store.phase === 'syncing') return <Splash text={store.phase === 'syncing' ? 'Loading your household…' : ''} />
+  if (store.phase === 'signedOut') return <SignIn />
+  if (store.phase === 'error') return <Splash text={store.error} action={{ label: 'Try again', onClick: store.retry }} secondary={{ label: 'Sign out', onClick: store.signOut }} />
+  if (store.phase === 'link' && store.pendingLocal) {
+    return <LinkData local={store.pendingLocal} onMerge={() => store.resolveLocal(true)} onDiscard={() => store.resolveLocal(false)} />
+  }
 
   if (!profile?.onboarded) {
     return <Onboarding profile={profile || DEFAULT_PROFILE} saveProfile={saveProfile} />
@@ -162,7 +163,8 @@ export default function App() {
   const closeSheet = () => setSheet(null)
   const header = { initials: toInitials(profile.name), onMenu: () => setMenuOpen((o) => !o), menuOpen }
   const data = { profile, transactions, inventory, budgets, shoppingList }
-  const actions = { saveProfile, saveTx, saveInv, saveBudgets, saveSL, addTransaction, addToShoppingList, genShoppingList, setPage, openSheet }
+  const account = { email: store.session?.user?.email, sync: store.sync, signOut: store.signOut }
+  const actions = { saveProfile, saveTx, saveInv, saveBudgets, saveSL, addTransaction, addToShoppingList, genShoppingList, setPage, openSheet, account }
 
   const pages = {
     dashboard: <Dashboard {...data} {...derived} {...actions} header={header} />,
