@@ -11,6 +11,7 @@ import {
   Checkbox, Chip, Barcode, Overlay, reset,
 } from './ui'
 import { exportBackup } from './OverflowMenu'
+import { callButler } from '../lib/ai'
 
 const ICON_BOX = { width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
 const catOptions = CATEGORIES.map((c) => ({ value: c, label: c }))
@@ -114,23 +115,16 @@ function ReceiptSheet({ onClose, addTransaction, profile }) {
     setError('')
     try {
       const data = await compressImage(file)
-      const res = await fetch('/api/anthropic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-5-5',
-          max_tokens: 2048,
-          system: `You are a receipt OCR assistant. Extract the purchase from the receipt image and return ONLY valid JSON (no markdown, no code fences):
+      const json = await callButler({
+        max_tokens: 2048,
+        system: `You are a receipt OCR assistant. Extract the purchase from the receipt image and return ONLY valid JSON (no markdown, no code fences):
 {"store":"store name or empty string","date":"YYYY-MM-DD or empty string","items":[{"item":"item name","qty":1,"price":0.00,"category":"Category"}]}
 "price" is the unit price. Valid categories: ${CATEGORIES.join(', ')}. If unsure, use "Other".`,
-          messages: [{ role: 'user', content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } },
-            { type: 'text', text: 'Extract all items from this receipt.' },
-          ] }],
-        }),
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } },
+          { type: 'text', text: 'Extract all items from this receipt.' },
+        ] }],
       })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || `Scanner error ${res.status}`)
       const text = (json.content?.[0]?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
       const parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
       setStore(parsed.store || profile?.stores?.[0] || '')
@@ -654,6 +648,15 @@ export default function Sheets({ sheet, onClose, ...rest }) {
     case 'dietary': return <DietarySheet {...props} />
     case 'clear': return <ClearSheet {...props} />
     case 'confirm': return <ConfirmDialog {...props} />
+    case 'signOut': {
+      const n = rest.account?.sync?.pending || 0
+      return (
+        <ConfirmDialog {...props} title="Sign out?" confirmLabel="Sign out" withBackup={n > 0}
+          body={n ? `${n} change${n === 1 ? " hasn't" : "s haven't"} reached your account yet and will be lost if you sign out now. Connect to the internet first, or export a backup.`
+            : 'Your data stays safe in your account. Sign back in with your email any time.'}
+          onConfirm={() => rest.account?.signOut()} />
+      )
+    }
     default: return null
   }
 }
