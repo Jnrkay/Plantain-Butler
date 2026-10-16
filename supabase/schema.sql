@@ -39,6 +39,8 @@ create table if not exists public.inventory_items (
   updated_at     timestamptz not null default now()
 );
 create index if not exists inventory_items_household_idx on public.inventory_items(household_id);
+-- How many you usually have when fully stocked (set on purchase); drives automatic running-low
+alter table public.inventory_items add column if not exists full_qty numeric;
 
 create table if not exists public.transactions (
   id            text primary key,
