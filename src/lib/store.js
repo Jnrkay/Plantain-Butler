@@ -25,11 +25,14 @@ export const COLLECTIONS = {
       id: String(i.id), household_id: h, name: String(i.name || 'Unnamed').trim() || 'Unnamed', qty: num(i.qty),
       category: i.category || 'Other', status: STATUSES.includes(i.status) ? i.status : 'high',
       last_price: numOrNull(i.lastPrice), last_purchased: dateOrNull(i.lastPurchased), store: i.store || null,
+      full_qty: numOrNull(i.fullQty), due_ack: dateOrNull(i.dueAck),
     }),
     fromRow: (r) => ({
       id: r.id, name: r.name, qty: Number(r.qty), category: r.category, status: r.status,
       lastPrice: r.last_price === null ? undefined : Number(r.last_price),
       lastPurchased: r.last_purchased || undefined, store: r.store || '',
+      fullQty: r.full_qty === null || r.full_qty === undefined ? undefined : Number(r.full_qty),
+      dueAck: r.due_ack || undefined,
     }),
   },
   transactions: {
@@ -387,7 +390,7 @@ export function useHouseholdStore() {
   const retry = useCallback(() => { setError(''); booted.current = null; setSession((s) => (s ? { ...s } : s)) }, [])
 
   return {
-    session, phase, error, sync, pendingLocal, retry, signOut, resolveLocal,
+    session, phase, error, sync, pendingLocal, retry, signOut, resolveLocal, refresh,
     profile: data.profile || null,
     budgets: data.budgets || {},
     inventory: data.inventory, transactions: data.transactions, shoppingList: data.shoppingList,

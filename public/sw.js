@@ -15,6 +15,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url)
   if (e.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return
+  if (e.request.cache === 'no-store') return // update checks go straight to the network
   e.respondWith(
     fetch(e.request)
       .then((res) => {

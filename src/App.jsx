@@ -3,7 +3,7 @@ import { DEFAULT_PROFILE } from './lib/constants'
 import { useHouseholdStore } from './lib/store'
 import { uid, today, monthKey } from './lib/utils'
 import { C, sans } from './lib/theme'
-import { initials as toInitials, lineTotal, sum, isLow } from './lib/derive'
+import { initials as toInitials, lineTotal, sum, isLow, annotateDue } from './lib/derive'
 import { Icon, reset } from './components/ui'
 
 import Onboarding from './components/Onboarding'
@@ -18,6 +18,8 @@ import Sheets from './components/Sheets'
 import SignIn from './components/SignIn'
 import LinkData from './components/LinkData'
 import { Button } from './components/ui'
+import PullToRefresh from './components/PullToRefresh'
+import UpdateBanner from './components/UpdateBanner'
 
 // Tab bar (23:5697) — labels and icons exactly as in Figma
 const TABS = [
@@ -76,7 +78,10 @@ export default function App() {
   const [sheet, setSheet] = useState(null) // { type, ...props }
   const [menuOpen, setMenuOpen] = useState(false)
   const store = useHouseholdStore()
-  const { profile, transactions, inventory, budgets, shoppingList, saveProfile, saveTx, saveInv, saveBudgets, saveSL } = store
+  const { profile, transactions, budgets, shoppingList, saveProfile, saveTx, saveBudgets, saveSL } = store
+  // Screens see `_due` on items past their usual rebuy time; it's stripped before saving.
+  const inventory = useMemo(() => annotateDue(store.inventory, transactions), [store.inventory, transactions])
+  const saveInv = useCallback((list) => store.saveInv(list.map(({ _due, ...i }) => i)), [store.saveInv])
 
   const setPage = useCallback((p) => { setPageRaw(p); setMenuOpen(false); window.scrollTo(0, 0) }, [])
 
@@ -96,9 +101,15 @@ export default function App() {
     newTx.forEach((tx) => {
       const idx = inv.findIndex((i) => i.name.toLowerCase().trim() === tx.item.toLowerCase())
       if (idx >= 0) {
-        inv[idx] = { ...inv[idx], qty: (Number(inv[idx].qty) || 0) + tx.qty, lastPurchased: tx.date, lastPrice: tx.price, store: tx.store || inv[idx].store, status: 'high' }
+        // A fresh purchase sets what "fully stocked" means for this item
+        const qty = (Number(inv[idx].qty) || 0) + tx.qty
+        const newer = !inv[idx].lastPurchased || tx.date >= inv[idx].lastPurchased
+        inv[idx] = {
+          ...inv[idx], qty, fullQty: qty, status: 'high',
+          ...(newer ? { lastPurchased: tx.date, lastPrice: tx.price, store: tx.store || inv[idx].store } : {}),
+        }
       } else {
-        inv.push({ id: uid(), name: tx.item, qty: tx.qty, category: tx.category, lastPurchased: tx.date, lastPrice: tx.price, store: tx.store, status: 'high' })
+        inv.push({ id: uid(), name: tx.item, qty: tx.qty, fullQty: tx.qty, category: tx.category, lastPurchased: tx.date, lastPrice: tx.price, store: tx.store, status: 'high' })
       }
     })
     saveInv(inv)
@@ -181,6 +192,8 @@ export default function App() {
         {pages[page]}
         {menuOpen && <OverflowMenu {...data} {...actions} onClose={() => setMenuOpen(false)} />}
       </main>
+      <PullToRefresh onRefresh={store.refresh} disabled={page === 'assistant' || !!sheet || menuOpen} />
+      <UpdateBanner />
       <TabBar page={page} setPage={setPage} />
       {sheet && <Sheets sheet={sheet} onClose={closeSheet} {...data} {...actions} />}
     </div>

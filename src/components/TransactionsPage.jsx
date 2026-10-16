@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react'
 import { C, TX, sans, mono, TAB_CLEARANCE } from '../lib/theme'
 import { today, monthKey } from '../lib/utils'
-import { availableMonths, daysInMonth, dateGroupLabel, shortDate, monthTitle, txInMonth, lineTotal, sum, money, categoryIcon } from '../lib/derive'
+import { availableMonths, daysInMonth, dateGroupLabel, shortDate, monthTitle, txInMonth, lineTotal, sum, money, categoryIcon, withQty } from '../lib/derive'
 import { Header, TitleRow, AddButton, Tag, Money, Chip, ChipRow, Thumb, LabelRow, reset } from './ui'
 
 function DailySpend({ tx, mk }) {
@@ -48,7 +48,7 @@ export function TxnRow({ t, onClick }) {
   )
 }
 
-export default function TransactionsPage({ header, transactions, saveTx, openSheet }) {
+export default function TransactionsPage({ header, transactions, saveTx, inventory, saveInv, openSheet }) {
   const [mk, setMk] = useState(monthKey(today()))
   const [cat, setCat] = useState(null)
   const months = availableMonths(transactions)
@@ -68,12 +68,22 @@ export default function TransactionsPage({ header, transactions, saveTx, openShe
     else groups.push({ date: t.date, items: [t] })
   })
 
-  const confirmDelete = (t) => openSheet('confirm', {
-    title: 'Delete transaction?',
-    body: `${t.item} · GHS ${money(lineTotal(t))} on ${shortDate(t.date)}. Stock levels won't change.`,
-    confirmLabel: 'Delete',
-    onConfirm: () => saveTx(transactions.filter((x) => x.id !== t.id)),
-  })
+  // Deleting a purchase takes what it added back out of stock
+  const confirmDelete = (t) => {
+    const key = String(t.item).toLowerCase().trim()
+    const inv = inventory.find((i) => i.name.toLowerCase().trim() === key)
+    const n = Number(t.qty) || 1
+    const takeOff = inv ? Math.min(n, Number(inv.qty) || 0) : 0
+    openSheet('confirm', {
+      title: 'Delete transaction?',
+      body: `${t.item} · GHS ${money(lineTotal(t))} on ${shortDate(t.date)}. ${takeOff ? `This also takes ${takeOff} off your stock.` : 'Stock levels won’t change.'}`,
+      confirmLabel: 'Delete',
+      onConfirm: () => {
+        saveTx(transactions.filter((x) => x.id !== t.id))
+        if (takeOff) saveInv(inventory.map((i) => (i.id === inv.id ? withQty(i, (Number(i.qty) || 0) - takeOff) : i)))
+      },
+    })
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>

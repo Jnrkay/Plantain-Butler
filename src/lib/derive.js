@@ -68,8 +68,27 @@ export const STOCK = {
   medium: { label: 'Running low', meter: 'MED', bars: 2 },
   low: { label: 'Out', meter: 'OUT', bars: 0 },
 }
-export const stockOf = (item) => STOCK[item?.status] ? item.status : 'high'
-export const isLow = (item) => item && (item.status === 'medium' || item.status === 'low')
+// `_due` (added by annotateDue, never saved) marks items that are past their usual rebuy time.
+export const stockOf = (item) => {
+  const s = STOCK[item?.status] ? item.status : 'high'
+  return s === 'high' && item?._due ? 'medium' : s
+}
+export const isLow = (item) => !!item && stockOf(item) !== 'high'
+
+// Status that follows from how many are left vs. how many you have when fully stocked.
+// 0 → Out; a third or less of a full stock (when that's 2+) → Running low; otherwise In stock.
+export const autoStatus = (qty, fullQty) => {
+  const q = Number(qty) || 0, f = Number(fullQty) || 0
+  if (q <= 0) return 'low'
+  if (f >= 2 && q <= Math.ceil(f / 3)) return 'medium'
+  return 'high'
+}
+// Change an item's count and keep its status in step.
+export const withQty = (item, qty) => {
+  const q = Math.max(0, Number(qty) || 0)
+  const full = Math.max(Number(item.fullQty) || Number(item.qty) || 0, q)
+  return { ...item, qty: q, fullQty: full || undefined, status: autoStatus(q, full) }
+}
 
 export const categoryIcon = (category = '') => {
   const c = category.toLowerCase()
@@ -122,15 +141,41 @@ export const monthlyPriceSeries = (purchases, endMk, n = 6) => {
   })
 }
 
-export const usuallyLasts = (purchases) => {
+// Average days between purchases (needs 2+ different purchase days)
+export const avgGapDays = (purchases) => {
   const dates = [...new Set(purchases.map((p) => p.date))].sort()
-  if (dates.length < 2) return '—'
+  if (dates.length < 2) return null
   const gaps = []
   for (let i = 1; i < dates.length; i++) gaps.push((parseDate(dates[i]) - parseDate(dates[i - 1])) / 86400000)
-  const avg = sum(gaps) / gaps.length
+  return sum(gaps) / gaps.length
+}
+export const daysLabel = (avg) => {
   if (avg < 10) return `~${Math.max(1, Math.round(avg))} days`
   if (avg < 60) return `~${Math.round(avg / 7)} weeks`
   return `~${Math.round(avg / 30)} months`
+}
+export const usuallyLasts = (purchases) => {
+  const avg = avgGapDays(purchases)
+  return avg === null ? '—' : daysLabel(avg)
+}
+
+// Mark in-stock items that have gone longer than usual since they were last bought.
+// Dismissed with dueAck (the date someone said "still got plenty").
+export const annotateDue = (inventory, transactions) => {
+  const byItem = {}
+  transactions.forEach((t) => { const k = norm(t.item); if (k) (byItem[k] ||= []).push(t) })
+  const now = parseDate(today())
+  return inventory.map((i) => {
+    if (i.status && i.status !== 'high') return i
+    const list = byItem[norm(i.name)]
+    if (!list || list.length < 2) return i
+    const avg = avgGapDays(list)
+    if (!avg || avg < 2) return i
+    const lastDate = list.reduce((m, t) => (t.date > m ? t.date : m), '')
+    const from = i.dueAck && i.dueAck > lastDate ? i.dueAck : lastDate
+    const since = (now - parseDate(from)) / 86400000
+    return since >= avg ? { ...i, _due: { avg, since: (now - parseDate(lastDate)) / 86400000 } } : i
+  })
 }
 
 export const initials = (name) => {

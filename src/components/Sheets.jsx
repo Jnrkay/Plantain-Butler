@@ -5,6 +5,7 @@ import { CATEGORIES, HOUSEHOLD_TYPES, DEFAULT_PROFILE } from '../lib/constants'
 import { today, uid } from '../lib/utils'
 import {
   money, longDate, shortDate, pad2, stockOf, categoryIcon, purchasesOf, usuallyLasts, MONTHS, parseDate,
+  withQty, daysLabel,
 } from '../lib/derive'
 import {
   Sheet, SheetHeader, Icon, Button, Field, TextInput, SelectInput, DateInput, QtyStepper, Segmented,
@@ -343,10 +344,10 @@ function ItemSheet({ onClose, itemId, inventory, saveInv, transactions, addToSho
   const onList = shoppingList.some((s) => !s.checked && String(s.name).toLowerCase().trim() === item.name.toLowerCase().trim())
 
   const patch = (p) => saveInv(inventory.map((i) => (i.id === item.id ? { ...i, ...p } : i)))
-  const setQty = (q) => {
-    const qty = Math.max(0, q)
-    patch({ qty, status: qty === 0 ? 'low' : status === 'low' ? 'medium' : status })
-  }
+  // Changing the count sets the status automatically; the status buttons below still override it.
+  const setQty = (q) => saveInv(inventory.map((i) => (i.id === item.id ? withQty(i, q) : i)))
+  const setStatus = (v) => patch(v === 'high' && item._due ? { status: v, dueAck: today() } : { status: v })
+  const due = item._due
   const icon = categoryIcon(item.category)
 
   const rows = [
@@ -392,9 +393,20 @@ function ItemSheet({ onClose, itemId, inventory, saveInv, transactions, addToSho
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <span style={TX.label}>STOCK STATUS</span>
-        <Segmented value={status} onChange={(v) => patch({ status: v })}
+        <Segmented value={status} onChange={setStatus}
           options={[{ value: 'high', label: 'In stock' }, { value: 'medium', label: 'Running low' }, { value: 'low', label: 'Out' }]} />
       </div>
+
+      {due && (
+        <div style={{ background: C.blush, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={sans(13, 400, { color: C.ink, lineHeight: '18px' })}>
+            <b style={{ fontWeight: 500 }}>Probably running low.</b> You usually buy this every {daysLabel(due.avg)} and it’s been {daysLabel(due.since).replace('~', '')}.
+          </span>
+          <button onClick={() => patch({ dueAck: today() })} style={{ ...reset, alignSelf: 'flex-start', ...sans(13, 500, { color: C.ink, textDecoration: 'underline' }) }}>
+            Still got plenty
+          </button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {rows.map(([k, v, color], i) => (
