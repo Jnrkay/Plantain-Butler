@@ -48,7 +48,6 @@ const STEPS = [
   { key: 'logged', label: 'Log a purchase', done: (d) => d.transactions.length > 0, go: (a) => a.openSheet('quickAdd') },
   { key: 'scanned', label: 'Scan a receipt', done: (d) => d.progress.scanned, go: (a) => a.openSheet('receipt') },
   { key: 'askedButler', label: 'Ask Butler something', done: (d) => d.progress.askedButler, go: (a) => a.setPage('assistant') },
-  { key: 'invited', label: 'Invite your household', done: (d) => d.progress.invited, go: (a) => a.openSheet('household') },
 ]
 
 const COLLAPSE_KEY = 'pb-checklist-collapsed'
