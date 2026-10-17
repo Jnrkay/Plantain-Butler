@@ -15,6 +15,7 @@ import { exportBackup } from './OverflowMenu'
 import { callButler, textOf, parseJson } from '../lib/ai'
 import { ItemSheet, EditItemSheet, TypeSheet } from './ItemSheets'
 import HouseholdSheet from './HouseholdSheet'
+import { ChatHistorySheet, MemorySheet } from './ButlerSheets'
 import { typeOf, brandOf, findItem, KNOWN_TYPES } from '../lib/learn'
 import { supabase } from '../lib/supabase'
 
@@ -600,6 +601,8 @@ export default function Sheets({ sheet, onClose, ...rest }) {
     case 'editItem': return <EditItemSheet key={`e${sheet.itemId}`} {...props} />
     case 'type': return <TypeSheet key={`t${sheet.typeKey}`} {...props} />
     case 'household': return <HouseholdSheet {...props} />
+    case 'chats': return <ChatHistorySheet {...props} />
+    case 'memories': return <MemorySheet {...props} />
     case 'shopItem': return <ShopItemSheet key={sheet.itemId || 'new'} {...props} />
     case 'profile': return <ProfileSheet {...props} />
     case 'budgets': return <BudgetsSheet {...props} />

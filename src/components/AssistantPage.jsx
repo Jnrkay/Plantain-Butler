@@ -5,11 +5,11 @@ import { today, monthKey } from '../lib/utils'
 import { lineTotal, sum, money, monthlyBudget, greeting, txInMonth } from '../lib/derive'
 import { Header, Barcode, Icon, reset } from './ui'
 import { callButler, textOf } from '../lib/ai'
+import { chatTitle, CHAT_CACHE } from '../lib/butlerData'
 import { systemPrompt, TOOLS, runTool } from '../lib/butler'
 import { typeOf, typeKey, daysLeftLabel } from '../lib/learn'
 
 const CHIPS = ['What can you do?', 'What’s running low?', 'This month vs last', 'How do I share with my family?']
-const STORE_KEY = 'pb-butler-chat'
 
 // Minimal formatting for model replies: paragraphs, line breaks, **bold**
 function RichText({ text, color }) {
@@ -56,10 +56,15 @@ function Typing() {
 }
 
 export default function AssistantPage(props) {
-  const { header, transactions, inventory, profile, shoppingList, addToShoppingList, lowStock, account, model, markProgress } = props
-  const saved = (() => { try { const v = JSON.parse(sessionStorage.getItem(STORE_KEY)); return v?.v === 2 ? v : null } catch { return null } })()
-  const [feed, setFeed] = useState(saved?.feed || []) // what's shown: user / butler / action / error
-  const [api, setApi] = useState(saved?.api || [])    // what Butler sees, incl. tool calls
+  const { header, transactions, inventory, profile, shoppingList, addToShoppingList, lowStock, account, model, markProgress, butler, chatId, setChatId, openSheet, refreshChats } = props
+  // The open conversation: shown instantly from this phone's cache, then from the account
+  const cached = (() => { try { const v = JSON.parse(localStorage.getItem(CHAT_CACHE)); return v && v.id === chatId ? v : null } catch { return null } })()
+  const [feed, setFeedState] = useState(cached?.feed || []) // what's shown: user / butler / action / memory / error
+  const [api, setApi] = useState(cached?.messages || [])    // what Butler sees, incl. tool calls
+  const feedRef = useRef(feed)
+  const setFeed = (f) => setFeedState((prev) => { const next = typeof f === 'function' ? f(prev) : f; feedRef.current = next; return next })
+  const chatRef = useRef(chatId) // id of the conversation currently on screen
+  const [loadingChat, setLoadingChat] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [suggestion, setSuggestion] = useState('open') // open | added | dismissed
@@ -70,7 +75,21 @@ export default function AssistantPage(props) {
   latest.current = props
   const undos = useRef({})
 
-  useEffect(() => { try { sessionStorage.setItem(STORE_KEY, JSON.stringify({ v: 2, feed: feed.slice(-60), api: api.slice(-40) })) } catch { /* ignore */ } }, [feed, api])
+  // Switching conversation (from History, or New chat)
+  useEffect(() => {
+    if (chatId === chatRef.current) return
+    chatRef.current = chatId
+    undos.current = {}
+    if (!chatId) { setFeed([]); setApi([]); return }
+    let live = true
+    setLoadingChat(true)
+    butler.loadChat(chatId).then((c) => {
+      if (!live || chatRef.current !== chatId) return
+      setFeed(c?.feed || []); setApi(c?.messages || [])
+    }).catch(() => { if (live) setFeed([{ id: 'x', kind: 'error', text: 'Couldn’t open that conversation. Check your connection.' }]) })
+      .finally(() => live && setLoadingChat(false))
+    return () => { live = false }
+  }, [chatId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [feed, loading, suggestion])
 
   const mk = monthKey(today())
@@ -136,7 +155,10 @@ export default function AssistantPage(props) {
         const p = latest.current
         const data = await callButler({
           max_tokens: 1200, tools: TOOLS,
-          system: systemPrompt({ profile: p.profile, transactions: p.transactions, inventory: p.inventory, shoppingList: p.shoppingList, model: p.model, name: p.account?.name }),
+          system: systemPrompt({
+            profile: p.profile, transactions: p.transactions, inventory: p.inventory, shoppingList: p.shoppingList, model: p.model, name: p.account?.name,
+            memories: p.butler?.memories, userId: p.butler?.userId, recentChats: p.recentChats,
+          }),
           messages: trimmed(msgs),
         })
         const blocks = (data.content || []).filter((b) => b.type === 'text' || b.type === 'tool_use')
@@ -147,11 +169,12 @@ export default function AssistantPage(props) {
         if (!uses.length) break
         const results = []
         for (const u of uses) {
-          if (!changed && !['find_purchases', 'open_screen'].includes(u.name)) { undos.current[undoId] = snapshot(); changed = true }
+          if (!changed && !['find_purchases', 'open_screen', 'remember', 'forget', 'recall_conversations'].includes(u.name)) { undos.current[undoId] = snapshot(); changed = true }
           let r
-          try { r = await runTool(u.name, u.input || {}, () => latest.current) } catch (e) { r = { result: `Failed: ${e.message}` } }
+          try { r = await runTool(u.name, u.input || {}, () => ({ ...latest.current, chatId: chatRef.current })) } catch (e) { r = { result: `Failed: ${e.message}` } }
           if (r.mutated) await new Promise((res) => setTimeout(res, 80)) // let the app apply the change before the next step
-          if (r.summary) push({ kind: 'action', text: r.summary, undoId })
+          if (r.memory) push({ kind: 'memory', text: r.memory.fact, memoryId: r.memory.id, scope: r.memory.scope })
+          else if (r.summary) push({ kind: 'action', text: r.summary, undoId: u.name === 'forget' ? null : undoId })
           results.push({ type: 'tool_result', tool_use_id: u.id, content: r.result || 'Done.' })
         }
         msgs = [...msgs, { role: 'user', content: results }]
@@ -164,10 +187,20 @@ export default function AssistantPage(props) {
     } finally {
       setApi(msgs)
       setLoading(false)
+      // Save the conversation to the account (private to this person)
+      try {
+        const first = feedRef.current.find((x) => x.kind === 'user')
+        const id = await butler.saveChat({ id: chatRef.current, title: chatTitle(first?.text || trimmedText), messages: msgs, feed: feedRef.current })
+        if (id && id !== chatRef.current) { chatRef.current = id; setChatId(id) }
+        refreshChats?.()
+      } catch { /* saved locally; will retry with the next message */ }
     }
   }
 
-  const clearChat = () => { setFeed([]); setApi([]); undos.current = {} }
+  const forgetMemory = async (m) => {
+    try { await butler.removeMemory(m.memoryId); setFeed((f) => f.map((x) => (x.id === m.id ? { ...x, forgotten: true } : x))) } catch { /* offline */ }
+  }
+  const newChat = () => { if (!loading) setChatId(null) }
 
   const listen = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -187,10 +220,18 @@ export default function AssistantPage(props) {
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100dvh - env(safe-area-inset-top, 0px))' }}>
       <Header {...header} />
 
-      {/* Title 23:6329 */}
-      <div style={{ display: 'flex', gap: 8, padding: '16px 20px', ...sans(30, 400, { lineHeight: '34px', letterSpacing: -0.9 }) }}>
-        <span style={{ color: C.ink55 }}>Ask your</span>
-        <span style={{ color: C.ink, fontWeight: 500 }}>Butler</span>
+      {/* Title 23:6329 + history / memory / new chat */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 20px' }}>
+        <div style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', ...sans(30, 400, { lineHeight: '34px', letterSpacing: -0.9 }), fontSize: 'clamp(22px, 7.2vw, 30px)' }}>
+          <span style={{ color: C.ink55 }}>Ask your</span>
+          <span style={{ color: C.ink, fontWeight: 500 }}>Butler</span>
+        </div>
+        {[['history@18', 'Chat history', () => openSheet('chats')], ['memory@18', 'What Butler remembers', () => openSheet('memories')], ['newchat@18', 'New chat', newChat]].map(([icon, label, fn]) => (
+          <button key={label} aria-label={label} title={label} onClick={fn}
+            style={{ ...reset, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.ink22}`, flexShrink: 0 }}>
+            <Icon name={icon} />
+          </button>
+        ))}
       </div>
 
       {/* Conversation 23:6332 */}
@@ -239,11 +280,19 @@ export default function AssistantPage(props) {
               )}
             </div>
           )
+          if (m.kind === 'memory') return (
+            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${C.ink25}`, padding: '10px 12px', width: 'min(300px, 100%)', flexShrink: 0, opacity: m.forgotten ? 0.55 : 1 }}>
+              <Icon name="memory@18" />
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={mono(9, 400, { letterSpacing: 0.54, color: C.ink80 })}>{m.forgotten ? 'FORGOTTEN' : `REMEMBERED · ${m.scope === 'personal' ? 'ONLY YOU' : 'HOUSEHOLD'}`}</span>
+                <span style={{ ...sans(13, 400, { color: C.ink, lineHeight: '18px', textDecoration: m.forgotten ? 'line-through' : 'none' }) }}>{m.text}</span>
+              </div>
+              {!m.forgotten && <button onClick={() => forgetMemory(m)} style={{ ...reset, ...sans(13, 500, { color: C.ink, textDecoration: 'underline', textUnderlineOffset: 3 }), flexShrink: 0 }}>Forget</button>}
+            </div>
+          )
           return <ButlerBubble key={m.id}><RichText text={m.text} color={m.kind === 'error' ? C.amber : C.blush} /></ButlerBubble>
         })}
-        {feed.length > 6 && !loading && (
-          <button onClick={clearChat} style={{ ...reset, alignSelf: 'center', ...sans(12, 400, { color: C.ink70, textDecoration: 'underline', textUnderlineOffset: 3 }), flexShrink: 0 }}>Clear chat</button>
-        )}
+        {loadingChat && <Typing />}
         {loading && <Typing />}
       </div>
 

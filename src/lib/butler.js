@@ -16,6 +16,8 @@ export const APP_GUIDE = `HOW PLANTAIN BUTLER WORKS (use this to answer "how do 
 - Insights tab: spend vs budget pace chart, spend by category, "Running out soon" (Butler's estimates), "By product" (switch between Product types and Brands; tap one for usage, average price, cheapest brand), and price changes.
 - List tab: shopping list with an estimated total. The amber "AUTO-GENERATE" card builds the list from low stock. Tick items as they go in the cart. "Add to list" adds anything. Buying an item (receipt or manual) ticks it off automatically — even a different brand of the same product type.
 - Butler tab (this chat): ask anything about spending, stock, prices, or how to use the app. Butler can also make changes when asked (add to the list, log purchases, set counts, add stock, set the budget, open a screen). Every change shows an Undo button. The mic button dictates.
+- Chat history: the clock icon at the top of the Butler tab lists past conversations (private to each person) — tap one to reopen it, or the trash icon to delete it. The pen icon starts a new chat.
+- Butler's memory: Butler remembers lasting things you tell it (diet, favourite or avoided brands, shopping habits, who's at home). The bookmark icon on the Butler tab (or "What Butler remembers" in History) shows everything it remembers; each memory is either "Household" (shared with everyone in the household) or "Only you". You can add or delete memories there, or just tell Butler "forget that".
 - Menu (⋮ / avatar, top right): Household profile, Household & sharing, Budgets, My stores, Dietary preferences, Export backup, Import backup, Clear data…, Change password, Sign out. The menu also shows sync status.
 - Household & sharing: "Create invite code" makes a 6-letter code (works once, 7 days). The other person needs an account, signs in, opens Menu → Household & sharing, enters the code and taps Join. Everyone in a household sees the same stock, spending and list. Owners can remove people; members can leave and go back to their own household.
 - How Butler learns: every item has a product type (e.g. "Water") and a brand (e.g. "Voltic"). Usage is tracked per type, so buying any brand restocks that type. After a type has been bought on two different days, Butler estimates how fast the household uses it, counts stock down over time (shown with ≈), predicts when it runs out and flags it as running low. Correcting a count (− / +, "That's right", or the status buttons) teaches Butler — the estimate adjusts.
@@ -61,6 +63,11 @@ RECENT PURCHASES:
 ${recent || 'none'}`
 }
 
+const memoryBlock = (memories = [], meId) => {
+  if (!memories.length) return 'Nothing yet.'
+  return memories.slice(-80).map((m) => `[${m.id}] (${m.scope === 'personal' ? 'only this person' : 'household'}${m.scope === 'household' && m.user_id && meId && m.user_id !== meId ? ', added by another member' : ''}) ${m.fact}`).join('\n')
+}
+
 export function systemPrompt(ctx) {
   return `You are Plantain Butler, a warm, practical household assistant inside the Plantain Butler app, for a home in Ghana. You help with spending, stock, shopping and using the app.
 
@@ -69,12 +76,19 @@ ${APP_GUIDE}
 HOUSEHOLD DATA:
 ${householdContext(ctx)}
 
+WHAT YOU REMEMBER (from earlier conversations — use naturally, don't recite):
+${memoryBlock(ctx.memories, ctx.userId)}
+
+RECENT CONVERSATIONS: ${(ctx.recentChats || []).slice(0, 6).map((c) => `"${c.title}" (${String(c.updated_at).slice(0, 10)})`).join(', ') || 'none'}
+
 HOW TO RESPOND:
 - Be brief: 1–4 short sentences, or a short list. No markdown headings. Use **bold** sparingly.
 - Use the tools whenever the user asks you to change something (add to list, log a purchase, update a count, add stock, set budget, open a screen). Don't claim you did something without calling the tool. After tools run, confirm in one short sentence — the app shows an Undo button.
 - If a request is ambiguous (e.g. which item, what price), ask one quick question instead of guessing. Prices are optional when logging; use the last known price if the user doesn't give one.
 - For "how do I…" questions, give the exact steps using the button names above. Offer to do it for them when a tool can.
-- Base answers on the data above; if something isn't there, say so. Never invent purchases or prices.`
+- Base answers on the data above; if something isn't there, say so. Never invent purchases or prices.
+- MEMORY: when the user tells you something lasting about their household or themselves — diet or allergies they mention, brands they like or avoid, pack sizes they buy, when/where they shop, who lives there, goals like "spend less on drinks", how they like answers — call remember right away, in one short third-person sentence (e.g. "Prefers Voltic water in packs of 12"). Use scope "household" for facts about the home that everyone shares; "personal" for things about just this person or anything they'd likely keep private. Don't remember one-off requests, things already in the data above, or anything already remembered. If a remembered fact changes, forget the old id and remember the new one. If asked to forget something, call forget.
+- If the user refers to an earlier conversation ("what did we say about…"), use recall_conversations.`
 }
 
 /* ---------- tools ---------- */
@@ -129,6 +143,21 @@ export const TOOLS = [
     name: 'open_screen',
     description: 'Take the user to a screen in the app.',
     input_schema: { type: 'object', properties: { screen: { type: 'string', enum: ['home', 'stock', 'spend', 'insights', 'list', 'scan_receipt', 'add_items', 'household_sharing', 'budgets'] } }, required: ['screen'] },
+  },
+  {
+    name: 'remember',
+    description: 'Save a lasting fact or preference to Butler\'s memory so future conversations can use it.',
+    input_schema: { type: 'object', properties: { fact: { type: 'string', description: 'one short third-person sentence' }, scope: { type: 'string', enum: ['household', 'personal'] } }, required: ['fact', 'scope'] },
+  },
+  {
+    name: 'forget',
+    description: 'Delete a memory by its id (shown in square brackets in WHAT YOU REMEMBER).',
+    input_schema: { type: 'object', properties: { memory_id: { type: 'string' } }, required: ['memory_id'] },
+  },
+  {
+    name: 'recall_conversations',
+    description: 'Search this person\'s past Butler conversations for what was said before. Empty query returns recent messages.',
+    input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
   },
   {
     name: 'find_purchases',
@@ -228,6 +257,20 @@ export async function runTool(name, input, app) {
       else if (sheets[s]) a.openSheet(sheets[s])
       else return { result: 'Unknown screen.' }
       return { result: `Opened ${s}.`, navigated: true }
+    }
+    case 'remember': {
+      const m = await a.butler.addMemory(input.fact, input.scope, a.chatId)
+      return { result: `Saved (id ${m.id}).`, memory: m }
+    }
+    case 'forget': {
+      const m = (a.butler.memories || []).find((x) => x.id === input.memory_id)
+      if (!m) return { result: 'No memory with that id.' }
+      await a.butler.removeMemory(m.id)
+      return { result: 'Forgotten.', summary: `Forgot: ${m.fact}` }
+    }
+    case 'recall_conversations': {
+      const hits = await a.butler.searchChats(input.query)
+      return { result: hits.length ? hits.map((h) => `${h.date} "${h.title}" — ${h.who}: ${h.text}`).join('\n') : 'Nothing found in past conversations.' }
     }
     case 'find_purchases': {
       const q = norm(input.query)

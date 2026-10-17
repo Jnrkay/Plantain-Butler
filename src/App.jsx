@@ -6,6 +6,7 @@ import { C, sans } from './lib/theme'
 import { initials as toInitials, lineTotal, sum, isLow, withQty } from './lib/derive'
 import { buildModel, annotate, typeOf, typeKey, ruleType, guessBrand, findItem, learnFromCount } from './lib/learn'
 import { classifyNames } from './lib/ai'
+import { useButlerData, CHAT_KEY } from './lib/butlerData'
 import { Icon, reset } from './components/ui'
 
 import Onboarding from './components/Onboarding'
@@ -100,6 +101,13 @@ export default function App() {
   const inventory = useMemo(() => annotate(store.inventory, model), [store.inventory, model])
   const saveInv = useCallback((list) => store.saveInv(list.map(clean)), [store.saveInv])
   const myName = store.session?.user?.user_metadata?.name || profile?.name || ''
+  // Butler's conversations (private to this person) and memories
+  const butler = useButlerData(store.phase === 'ready' ? store.householdId : null, store.session?.user?.id)
+  const [chatId, setChatIdRaw] = useState(() => { try { return JSON.parse(localStorage.getItem(CHAT_KEY)) } catch { return null } })
+  const setChatId = useCallback((id) => { setChatIdRaw(id); try { localStorage.setItem(CHAT_KEY, JSON.stringify(id)) } catch { /* ignore */ } }, [])
+  const [recentChats, setRecentChats] = useState([])
+  const refreshChats = useCallback(async () => { try { setRecentChats(await butler.listChats()) } catch { /* offline */ } }, [butler.listChats]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (store.phase === 'ready') refreshChats() }, [store.phase, store.householdId]) // eslint-disable-line react-hooks/exhaustive-deps
   const markProgress = useCallback((key) => {
     if (profile?.progress?.[key]) return
     saveProfile({ ...profile, progress: { ...(profile?.progress || {}), [key]: true } })
@@ -255,7 +263,7 @@ export default function App() {
   if (!profile?.onboarded) {
     return (
       <Onboarding profile={profile || DEFAULT_PROFILE} saveProfile={saveProfile} saveInv={saveInv} inventory={store.inventory}
-        account={{ switchHousehold: store.switchHousehold }} onDone={(next) => { if (next) setSheet({ type: next }) }} />
+        account={{ switchHousehold: () => { setChatId(null); return store.switchHousehold() } }} onDone={(next) => { if (next) setSheet({ type: next }) }} />
     )
   }
 
@@ -263,10 +271,11 @@ export default function App() {
   const closeSheet = () => setSheet(null)
   const header = { initials: toInitials(myName), onMenu: () => setMenuOpen((o) => !o), menuOpen }
   const data = { profile, transactions, inventory, budgets, shoppingList }
-  const account = { email: store.session?.user?.email, name: myName, sync: store.sync, signOut: store.signOut, switchHousehold: store.switchHousehold }
+  const account = { email: store.session?.user?.email, name: myName, sync: store.sync, signOut: store.signOut, switchHousehold: () => { setChatId(null); return store.switchHousehold() } }
   const actions = {
     saveProfile, saveTx, saveInv, saveBudgets, saveSL, saveLearning, addTransaction, addToShoppingList, genShoppingList,
     recordCount, markProgress, setPage, openSheet, account, model, learning,
+    butler, chatId, setChatId, recentChats, refreshChats,
   }
 
   const pages = {

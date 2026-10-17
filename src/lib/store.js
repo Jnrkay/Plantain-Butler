@@ -103,6 +103,7 @@ function writeCache(data) {
 }
 export function clearLocalData() {
   [PROFILE_KEY, BUDGETS_KEY, LEARNING_KEY, LINK_KEY, QUEUE_KEY, SNAP_KEY, ...KEYS.map((k) => COLLECTIONS[k].cacheKey)].forEach(LS.del)
+  ;['pb-chat-current', 'pb-chat-cache', 'pb-memories', 'pb-classified'].forEach(LS.del)
   try { sessionStorage.removeItem('pb-butler-chat') } catch { /* ignore */ }
 }
 
