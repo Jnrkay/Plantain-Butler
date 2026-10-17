@@ -41,7 +41,7 @@ const syncLabel = (sync) => {
   return 'Synced'
 }
 
-export default function OverflowMenu({ profile, openSheet, onClose, account, saveProfile, saveTx, saveInv, saveBudgets, saveSL }) {
+export default function OverflowMenu({ profile, openSheet, onClose, account, saveProfile, saveTx, saveInv, saveBudgets, saveSL, toggleDisplayCheck }) {
   const fileRef = useRef(null)
   const budget = monthlyBudget(profile)
 
@@ -98,6 +98,7 @@ export default function OverflowMenu({ profile, openSheet, onClose, account, sav
           <Item icon="signout" label="Sign out" meta={account.email ? account.email.split('@')[0] : undefined}
             onClick={() => openSheet('signOut')} />
         )}
+        {toggleDisplayCheck && <Item icon="sliders" label="Display check" meta="for testers" divider onClick={() => { toggleDisplayCheck(); onClose() }} />}
         <input ref={fileRef} type="file" accept=".json,application/json" onChange={onImport} style={{ display: 'none' }} />
       </div>
     </Overlay>

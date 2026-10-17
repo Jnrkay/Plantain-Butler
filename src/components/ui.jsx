@@ -308,6 +308,26 @@ const SheetCtx = createContext(null)
 let lastSheetUnmount = 0
 let dimCount = 0
 
+// While a sheet is open the page behind it is pinned in place (not just unscrollable).
+// iOS then has nothing to scroll when the keyboard opens, so the sheet can't be pushed
+// up under the status bar. The page goes back to exactly where it was afterwards.
+let locks = 0, savedY = 0
+function lockPage() {
+  if (locks++ > 0) return
+  savedY = window.scrollY
+  const b = document.body.style
+  Object.assign(b, { position: 'fixed', top: `-${savedY}px`, left: '0', right: '0', width: '100%', overflow: 'hidden' })
+  document.documentElement.classList.add('pb-locked')
+}
+function unlockPage() {
+  if (--locks > 0) return
+  locks = 0
+  const b = document.body.style
+  Object.assign(b, { position: '', top: '', left: '', right: '', width: '', overflow: '' })
+  document.documentElement.classList.remove('pb-locked')
+  window.scrollTo(0, savedY)
+}
+
 export function Sheet({ onClose, children, gap = 16, label }) {
   const [swap] = useState(() => Date.now() - lastSheetUnmount < 160)
   const [closing, setClosing] = useState(false)
@@ -322,9 +342,8 @@ export function Sheet({ onClose, children, gap = 16, label }) {
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && close()
     window.addEventListener('keydown', onKey)
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
+    lockPage()
+    return () => { window.removeEventListener('keydown', onKey); unlockPage() }
   }, [close])
   useEffect(() => () => { lastSheetUnmount = Date.now() }, [])
   // The strip behind the iPhone status bar dims with the page, and lightens as the sheet closes

@@ -23,6 +23,7 @@ import LinkData from './components/LinkData'
 import { Button } from './components/ui'
 import PullToRefresh from './components/PullToRefresh'
 import UpdateBanner from './components/UpdateBanner'
+import DisplayCheck from './components/DisplayCheck'
 
 const clean = (i) => Object.fromEntries(Object.entries(i).filter(([k]) => !k.startsWith('_')))
 const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10
@@ -99,6 +100,7 @@ export default function App() {
   const [page, setPageRaw] = useState('dashboard')
   const [sheet, setSheet] = useState(null) // { type, ...props }
   const [menuOpen, setMenuOpen] = useState(false)
+  const [displayCheck, setDisplayCheck] = useState(false)
   const store = useHouseholdStore()
   const { profile, transactions, budgets, shoppingList, learning, saveProfile, saveTx, saveBudgets, saveSL, saveLearning } = store
   // Butler's learning model: per product type usage, estimates and status.
@@ -289,7 +291,7 @@ export default function App() {
   const actions = {
     saveProfile, saveTx, saveInv, saveBudgets, saveSL, saveLearning, addTransaction, addToShoppingList, genShoppingList,
     recordCount, markProgress, setPage, openSheet, account, model, learning,
-    butler, chatId, setChatId, recentChats, refreshChats,
+    butler, chatId, setChatId, recentChats, refreshChats, toggleDisplayCheck: () => setDisplayCheck((v) => !v),
   }
 
   const pages = {
@@ -311,6 +313,7 @@ export default function App() {
       </main>
       <PullToRefresh onRefresh={store.refresh} disabled={page === 'assistant' || !!sheet || menuOpen} />
       <UpdateBanner />
+      {displayCheck && <DisplayCheck onClose={() => setDisplayCheck(false)} />}
       <TabBar page={page} setPage={setPage} />
       {sheet && <Sheets sheet={sheet} onClose={closeSheet} {...data} {...actions} />}
     </div>

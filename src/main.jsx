@@ -15,8 +15,14 @@ const syncViewport = () => {
   r.setProperty('--vvh', `${vv ? vv.height : window.innerHeight}px`)
   document.documentElement.classList.toggle('pb-keyboard', !!vv && window.innerHeight - vv.height > 120)
 }
-vv?.addEventListener('resize', syncViewport)
-vv?.addEventListener('scroll', syncViewport)
+// If iOS still scrolls the (pinned) page while a sheet is open, put it straight back
+const keepPinned = () => {
+  syncViewport()
+  if (document.documentElement.classList.contains('pb-locked') && window.scrollY !== 0) window.scrollTo(0, 0)
+}
+vv?.addEventListener('resize', keepPinned)
+vv?.addEventListener('scroll', keepPinned)
+window.addEventListener('scroll', () => { if (document.documentElement.classList.contains('pb-locked') && window.scrollY !== 0) window.scrollTo(0, 0) }, { passive: true })
 window.addEventListener('resize', syncViewport)
 syncViewport()
 
