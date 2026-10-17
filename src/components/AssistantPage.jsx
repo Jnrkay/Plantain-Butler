@@ -36,6 +36,25 @@ function ButlerBubble({ children, label }) {
   )
 }
 
+// Chats saved before a fix could be missing Butler's replies in what's shown, though the
+// replies were kept in the conversation itself. Rebuild the view from that when they differ.
+function repairFeed(feed, messages) {
+  const textOf = (c) => (typeof c === 'string' ? c : (c || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n')).trim()
+  const replies = messages.filter((m) => m.role === 'assistant' && textOf(m.content) && textOf(m.content) !== '…')
+  if (feed.filter((f) => f.kind === 'butler').length >= replies.length) return feed
+  const out = []
+  messages.forEach((m, i) => {
+    const t = textOf(m.content)
+    if (m.role === 'user' && typeof m.content !== 'string' && m.content.some((b) => b.type === 'tool_result')) return
+    if (!t || t === '…') return
+    if (m.role === 'user') {
+      const shown = feed.find((f) => f.kind === 'user' && t.includes(f.text || '\u0000'))
+      out.push(shown || { id: `r${i}`, kind: 'user', text: t.replace(/^\(Voice note\) /, '') })
+    } else out.push({ id: `r${i}`, kind: 'butler', text: t })
+  })
+  return out
+}
+
 function FileThumb({ f, size = 64 }) {
   if (f.thumb) {
     return (
@@ -114,10 +133,12 @@ export default function AssistantPage(props) {
   const { header, transactions, inventory, profile, shoppingList, addToShoppingList, lowStock, account, model, markProgress, butler, chatId, setChatId, openSheet, refreshChats } = props
   // The open conversation: shown instantly from this phone's cache, then from the account
   const cached = (() => { try { const v = JSON.parse(localStorage.getItem(CHAT_CACHE)); return v && v.id === chatId ? v : null } catch { return null } })()
-  const [feed, setFeedState] = useState(cached?.feed || []) // what's shown: user / butler / action / memory / error
+  const [feed, setFeedState] = useState(() => repairFeed(cached?.feed || [], cached?.messages || [])) // what's shown: user / butler / action / memory / error
   const [api, setApi] = useState(cached?.messages || [])    // what Butler sees, incl. tool calls
   const feedRef = useRef(feed)
-  const setFeed = (f) => setFeedState((prev) => { const next = typeof f === 'function' ? f(prev) : f; feedRef.current = next; return next })
+  // Update the copy we save immediately (not when React next renders), so a reply that
+  // arrives just before saving is always included.
+  const setFeed = (f) => { const next = typeof f === 'function' ? f(feedRef.current) : f; feedRef.current = next; setFeedState(next) }
   const chatRef = useRef(chatId) // id of the conversation currently on screen
   const [loadingChat, setLoadingChat] = useState(false)
   const [input, setInput] = useState('')
@@ -145,7 +166,7 @@ export default function AssistantPage(props) {
     setLoadingChat(true)
     butler.loadChat(chatId).then((c) => {
       if (!live || chatRef.current !== chatId) return
-      setFeed(c?.feed || []); setApi(c?.messages || [])
+      setFeed(repairFeed(c?.feed || [], c?.messages || [])); setApi(c?.messages || [])
     }).catch(() => { if (live) setFeed([{ id: 'x', kind: 'error', text: 'Couldn’t open that conversation. Check your connection.' }]) })
       .finally(() => live && setLoadingChat(false))
     return () => { live = false }
