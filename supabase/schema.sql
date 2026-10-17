@@ -100,13 +100,14 @@ language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.household_members m where m.household_id = hid and m.user_id = auth.uid())
 $$;
 
--- Returns the caller's household, creating one (with them as owner) on first use.
+-- Returns the caller's active household (the one they joined most recently), creating one
+-- (with them as owner) on first use.
 create or replace function public.ensure_household() returns uuid
 language plpgsql security definer set search_path = public as $$
 declare hid uuid;
 begin
   if auth.uid() is null then raise exception 'not signed in'; end if;
-  select household_id into hid from public.household_members where user_id = auth.uid() order by created_at limit 1;
+  select household_id into hid from public.household_members where user_id = auth.uid() order by created_at desc limit 1;
   if hid is null then
     insert into public.households (created_by) values (auth.uid()) returning id into hid;
     insert into public.household_members (household_id, user_id, role) values (hid, auth.uid(), 'owner');
@@ -168,3 +169,124 @@ grant select on public.household_members to authenticated;
 grant select, insert, update, delete on public.inventory_items, public.transactions, public.shopping_items to authenticated;
 revoke all on public.households, public.household_members, public.inventory_items, public.transactions, public.shopping_items, public.ai_usage from anon;
 revoke all on public.ai_usage from authenticated;
+
+-- =====================================================================
+-- v3 — brands & product types, learned usage, household sharing
+-- Everything below only ADDS columns, tables and functions. Updates to this
+-- file must never drop or rewrite existing data.
+-- =====================================================================
+alter table public.inventory_items add column if not exists brand text;
+alter table public.inventory_items add column if not exists product_type text;
+alter table public.transactions    add column if not exists brand text;
+alter table public.transactions    add column if not exists product_type text;
+-- What Butler has learned about how fast the household uses each product type
+alter table public.households add column if not exists learning jsonb not null default '{}'::jsonb;
+
+-- Invite codes. Clients never touch this table directly — only through the functions below.
+create table if not exists public.household_invites (
+  code         text primary key,
+  household_id uuid not null references public.households(id) on delete cascade,
+  created_by   uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  created_at   timestamptz not null default now(),
+  expires_at   timestamptz not null default now() + interval '7 days',
+  used_by      uuid references auth.users(id) on delete set null,
+  used_at      timestamptz
+);
+create index if not exists household_invites_household_idx on public.household_invites(household_id);
+-- Failed/attempted joins per user per day, to stop code guessing
+create table if not exists public.join_attempts (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  day     date not null default current_date,
+  n       integer not null default 0,
+  primary key (user_id, day)
+);
+alter table public.household_invites enable row level security;
+alter table public.join_attempts     enable row level security;
+revoke all on public.household_invites, public.join_attempts from anon, authenticated;
+
+-- New invite code for the caller's active household (any member can invite).
+create or replace function public.create_invite() returns json
+language plpgsql security definer set search_path = public as $$
+declare hid uuid; c text; b bytea; i int;
+begin
+  if auth.uid() is null then raise exception 'not signed in'; end if;
+  hid := public.ensure_household();
+  delete from public.household_invites hi where hi.household_id = hid and hi.used_by is null and hi.expires_at < now();
+  -- keep at most 5 open codes per household
+  delete from public.household_invites where code in (
+    select hi.code from public.household_invites hi where hi.household_id = hid and hi.used_by is null
+    order by hi.created_at desc offset 4);
+  loop
+    b := uuid_send(gen_random_uuid()); c := '';
+    for i in 0..5 loop c := c || substr('ABCDEFGHJKMNPQRSTUVWXYZ23456789', 1 + (get_byte(b, i) % 31), 1); end loop;
+    begin
+      insert into public.household_invites (code, household_id) values (c, hid);
+      exit;
+    exception when unique_violation then -- try another code
+    end;
+  end loop;
+  return json_build_object('code', c, 'expires_at', now() + interval '7 days');
+end $$;
+
+-- Join with a code. Returns {status: ok|invalid|already|limit, household_id}.
+create or replace function public.join_household(p_code text) returns json
+language plpgsql security definer set search_path = public as $$
+declare inv public.household_invites; tries int;
+begin
+  if auth.uid() is null then raise exception 'not signed in'; end if;
+  insert into public.join_attempts (user_id, day, n) values (auth.uid(), current_date, 1)
+  on conflict (user_id, day) do update set n = public.join_attempts.n + 1 returning n into tries;
+  if tries > 10 then return json_build_object('status', 'limit'); end if;
+  select * into inv from public.household_invites where code = upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g')) for update;
+  if not found or inv.used_by is not null or inv.expires_at < now() then return json_build_object('status', 'invalid'); end if;
+  if exists (select 1 from public.household_members where household_id = inv.household_id and user_id = auth.uid()) then
+    return json_build_object('status', 'already', 'household_id', inv.household_id);
+  end if;
+  insert into public.household_members (household_id, user_id, role) values (inv.household_id, auth.uid(), 'member');
+  update public.household_invites set used_by = auth.uid(), used_at = now() where code = inv.code;
+  return json_build_object('status', 'ok', 'household_id', inv.household_id);
+end $$;
+
+-- Leave the active household (owners can't leave their own; they remove others instead).
+create or replace function public.leave_household() returns json
+language plpgsql security definer set search_path = public as $$
+declare hid uuid; r text;
+begin
+  if auth.uid() is null then raise exception 'not signed in'; end if;
+  hid := public.ensure_household();
+  select role into r from public.household_members where household_id = hid and user_id = auth.uid();
+  if r = 'owner' then return json_build_object('status', 'owner'); end if;
+  delete from public.household_members where household_id = hid and user_id = auth.uid();
+  return json_build_object('status', 'ok', 'household_id', public.ensure_household());
+end $$;
+
+-- Owner removes someone from the active household.
+create or replace function public.remove_member(p_user uuid) returns json
+language plpgsql security definer set search_path = public as $$
+declare hid uuid;
+begin
+  if auth.uid() is null then raise exception 'not signed in'; end if;
+  hid := public.ensure_household();
+  if not exists (select 1 from public.household_members where household_id = hid and user_id = auth.uid() and role = 'owner') then
+    return json_build_object('status', 'not_owner');
+  end if;
+  if p_user = auth.uid() then return json_build_object('status', 'self'); end if;
+  delete from public.household_members where household_id = hid and user_id = p_user;
+  return json_build_object('status', 'ok');
+end $$;
+
+-- Who's in the active household (emails only of people you share with).
+create or replace function public.list_members() returns table (user_id uuid, email text, name text, role text, joined_at timestamptz, is_me boolean)
+language plpgsql security definer set search_path = public as $$
+declare hid uuid;
+begin
+  if auth.uid() is null then raise exception 'not signed in'; end if;
+  hid := public.ensure_household();
+  return query
+    select m.user_id, u.email::text, coalesce(u.raw_user_meta_data->>'name', '')::text, m.role, m.created_at, m.user_id = auth.uid()
+    from public.household_members m join auth.users u on u.id = m.user_id
+    where m.household_id = hid order by m.created_at;
+end $$;
+
+revoke all on function public.create_invite(), public.join_household(text), public.leave_household(), public.remove_member(uuid), public.list_members() from public, anon;
+grant execute on function public.create_invite(), public.join_household(text), public.leave_household(), public.remove_member(uuid), public.list_members() to authenticated;
