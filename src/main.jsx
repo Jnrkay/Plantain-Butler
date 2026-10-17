@@ -7,6 +7,27 @@ import './index.css'
 // iOS Safari only applies :active (our press feedback) when a touch listener exists
 document.addEventListener('touchstart', () => {}, { passive: true })
 
+// The part of the screen you can actually see. When the iOS keyboard opens it shrinks and
+// pans the screen; sheets and the status-bar strip follow it instead of sliding under the bar.
+const vv = window.visualViewport
+const syncViewport = () => {
+  const r = document.documentElement.style
+  r.setProperty('--vvh', `${vv ? vv.height : window.innerHeight}px`)
+  r.setProperty('--vvt', `${vv ? Math.max(0, vv.offsetTop) : 0}px`)
+  document.documentElement.classList.toggle('pb-keyboard', !!vv && window.innerHeight - vv.height > 120)
+}
+vv?.addEventListener('resize', syncViewport)
+vv?.addEventListener('scroll', syncViewport)
+window.addEventListener('resize', syncViewport)
+syncViewport()
+
+// Once the keyboard has settled, keep the field you're typing in visible inside its sheet
+document.addEventListener('focusin', (e) => {
+  const el = e.target
+  if (!(el instanceof HTMLElement) || !el.matches('input, textarea, select') || !el.closest('[role="dialog"]')) return
+  setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 320)
+})
+
 // Show the soft fade under the status bar only once the page has scrolled
 let ticking = false
 window.addEventListener('scroll', () => {

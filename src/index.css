@@ -15,15 +15,18 @@ html { background: #eeefe0; }
 
 /* Status bar strip + a soft fade under it, so scrolled content eases out instead of hard-cropping */
 .pb-statusbar {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 45; pointer-events: none;
-  height: max(1px, env(safe-area-inset-top, 0px)); background: #eeefe0;
+  /* Above everything (sheets included) and pinned to the visible top, so iOS always tints the bar cream */
+  position: fixed; top: var(--vvt, 0px); left: 0; right: 0; z-index: 1000; pointer-events: none;
+  height: max(4px, env(safe-area-inset-top, 0px)); background: #eeefe0;
 }
 .pb-topfade {
-  position: fixed; left: 0; right: 0; top: env(safe-area-inset-top, 0px); z-index: 45; pointer-events: none;
+  position: fixed; left: 0; right: 0; top: calc(var(--vvt, 0px) + max(4px, env(safe-area-inset-top, 0px))); z-index: 45; pointer-events: none;
   height: 18px; background: linear-gradient(#eeefe0, rgba(238, 239, 224, 0));
   opacity: 0; transition: opacity .2s ease;
 }
 html.pb-scrolled .pb-topfade { opacity: 1; }
+/* With the keyboard up there's no home indicator to clear, so sheets use the space */
+html.pb-keyboard { --sheet-pad-bottom: 16px; }
 
 body {
   background: #eeefe0;

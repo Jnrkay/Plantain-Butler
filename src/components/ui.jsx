@@ -352,14 +352,14 @@ export function Sheet({ onClose, children, gap = 16, label }) {
 
   return (
     <SheetCtx.Provider value={close}>
-      <div role="dialog" aria-modal="true" aria-label={label} style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div role="dialog" aria-modal="true" aria-label={label} style={{ position: 'fixed', left: 0, right: 0, top: 'var(--vvt, 0px)', height: 'var(--vvh, 100dvh)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
         <div onClick={close} style={{ position: 'absolute', inset: 0, background: C.scrim, animation: closing ? 'pb-fade-out .18s ease both' : swap ? 'none' : 'pb-fade-in .22s ease' }} />
         <div
           ref={panel}
           style={{
-            position: 'relative', width: '100%', maxWidth: 480, maxHeight: 'calc(100dvh - 40px)', overflowY: 'auto', overscrollBehavior: 'contain',
+            position: 'relative', width: '100%', maxWidth: 480, maxHeight: 'calc(var(--vvh, 100dvh) - max(16px, env(safe-area-inset-top, 0px)) - 12px)', overflowY: 'auto', overscrollBehavior: 'contain',
             background: C.sheet, borderRadius: '26px 26px 0 0',
-            padding: '0 20px calc(36px + env(safe-area-inset-bottom, 0px))',
+            padding: '0 20px var(--sheet-pad-bottom, calc(36px + env(safe-area-inset-bottom, 0px)))',
             display: 'flex', flexDirection: 'column', gap,
             animation: closing ? 'pb-sheet-out .18s var(--ease-in) both' : swap ? 'none' : 'pb-sheet-in .3s var(--ease-out)',
           }}
