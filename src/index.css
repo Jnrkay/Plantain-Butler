@@ -114,6 +114,9 @@ input, select, textarea { transition: border-color .15s ease; }
 .pb-pop { animation: pb-pop .3s var(--ease-spring); }
 .pb-bump { display: inline-block; animation: pb-bump .26s var(--ease-out); }
 .pb-msg { animation: pb-msg-in .26s var(--ease-out) both; }
+@keyframes pb-rec { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
+.pb-rec-dot { animation: pb-rec 1.1s ease-in-out infinite; }
+.pb-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,178,0,.3); border-top-color: #ffb200; border-radius: 50%; animation: pb-spin .7s linear infinite; display: inline-block; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important; }

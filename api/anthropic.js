@@ -8,7 +8,7 @@ export const config = { maxDuration: 60 }
 
 const MODEL = 'claude-sonnet-5-5'
 const MAX_OUTPUT_TOKENS = 2048
-const BLOCK_TYPES = new Set(['text', 'image', 'tool_use', 'tool_result'])
+const BLOCK_TYPES = new Set(['text', 'image', 'document', 'tool_use', 'tool_result'])
 const DAILY_LIMIT = Number(process.env.BUTLER_DAILY_LIMIT) || 100
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || PUBLIC_URL).replace(/\/$/, '')

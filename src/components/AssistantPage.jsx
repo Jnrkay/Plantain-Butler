@@ -6,6 +6,7 @@ import { lineTotal, sum, money, monthlyBudget, greeting, txInMonth } from '../li
 import { Header, Barcode, Icon, reset } from './ui'
 import { callButler, textOf } from '../lib/ai'
 import { chatTitle, CHAT_CACHE } from '../lib/butlerData'
+import { prepareFile, startRecorder, transcribe, voiceNotesAvailable, fmtDuration, kindOf, MAX_VOICE_SECONDS } from '../lib/media'
 import { systemPrompt, TOOLS, runTool } from '../lib/butler'
 import { typeOf, typeKey, daysLeftLabel } from '../lib/learn'
 
@@ -35,12 +36,66 @@ function ButlerBubble({ children, label }) {
   )
 }
 
-function UserBubble({ text }) {
-  return (
-    <div className="pb-msg" style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0, transformOrigin: 'right bottom' }}>
-      <div style={{ background: C.ink, padding: '12px 16px', maxWidth: 280 }}>
-        <p style={sans(14, 400, { color: C.cream, lineHeight: '20px' })}>{text}</p>
+function FileThumb({ f, size = 64 }) {
+  if (f.thumb) {
+    return (
+      <div style={{ position: 'relative', width: size, height: size, flexShrink: 0, background: `center/cover url(${f.thumb})` }}>
+        {f.kind === 'video' && (
+          <span style={{ position: 'absolute', left: 4, bottom: 4, background: 'rgba(18,38,35,.8)', padding: '2px 4px', ...mono(9, 500, { color: C.cream }) }}>▶ {fmtDuration(f.duration)}</span>
+        )}
       </div>
+    )
+  }
+  return (
+    <div style={{ height: size, minWidth: size, padding: '0 10px', flexShrink: 0, background: C.teal, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
+      <span style={mono(9, 500, { color: C.amber, letterSpacing: 0.54 })}>{f.kind === 'audio' ? `AUDIO · ${fmtDuration(f.duration)}` : f.kind.toUpperCase()}</span>
+      <span style={{ ...sans(11, 400, { color: C.blush }), maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</span>
+    </div>
+  )
+}
+
+function UserBubble({ m }) {
+  return (
+    <div className="pb-msg" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0, transformOrigin: 'right bottom' }}>
+      {m.files?.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 280 }}>
+          {m.files.map((f, i) => <FileThumb key={i} f={f} />)}
+        </div>
+      )}
+      {(m.text || m.voice) && (
+        <div style={{ background: C.ink, padding: '12px 16px', maxWidth: 280, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {m.voice && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, ...mono(9, 500, { color: C.amber, letterSpacing: 0.54 }) }}>
+              <Icon name="mic@18" color={C.amber} /> VOICE NOTE · {fmtDuration(m.voice.duration)}
+            </span>
+          )}
+          {m.text && <p style={sans(14, 400, { color: C.cream, lineHeight: '20px', fontStyle: m.voice ? 'italic' : 'normal' })}>{m.voice ? `“${m.text}”` : m.text}</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Recording bar: live level, timer, cancel / send
+function Recorder({ level, seconds, onCancel, onSend }) {
+  const bars = 28
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, height: 52, padding: '0 8px 0 12px', background: C.ink }}>
+      <button type="button" aria-label="Cancel voice note" onClick={onCancel} style={{ ...reset, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="x@16" color={C.cream} />
+      </button>
+      <span className="pb-rec-dot" style={{ width: 8, height: 8, borderRadius: 4, background: C.ember, flexShrink: 0 }} />
+      <span style={mono(12, 500, { color: C.cream, width: 36 })}>{fmtDuration(seconds)}</span>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 2, height: 28, overflow: 'hidden' }}>
+        {Array.from({ length: bars }, (_, i) => {
+          const wave = 0.35 + 0.65 * Math.abs(Math.sin(i * 1.7 + seconds * 3))
+          return <span key={i} style={{ width: 3, flexShrink: 0, height: `${Math.max(12, level * wave * 100)}%`, background: C.amber, opacity: 0.85, transition: 'height .08s linear' }} />
+        })}
+      </div>
+      <button type="button" aria-label="Send voice note" onClick={onSend}
+        style={{ ...reset, width: 40, height: 40, background: C.amber, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon name="send@16" color={C.ink} />
+      </button>
     </div>
   )
 }
@@ -69,6 +124,11 @@ export default function AssistantPage(props) {
   const [loading, setLoading] = useState(false)
   const [suggestion, setSuggestion] = useState('open') // open | added | dismissed
   const [listening, setListening] = useState(false)
+  const [files, setFiles] = useState([])           // attachments waiting to be sent
+  const [rec, setRec] = useState(null)             // { recorder, seconds, level } while recording
+  const [voiceOk, setVoiceOk] = useState(null)     // is transcription switched on?
+  const fileRef = useRef(null)
+  useEffect(() => { voiceNotesAvailable().then(setVoiceOk) }, [])
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
   const latest = useRef(props)
@@ -134,20 +194,33 @@ export default function AssistantPage(props) {
   }
 
   // Keep history valid for the API: start on a plain user message, don't split tool call/result pairs
+  const isUserTurn = (m) => m.role === 'user' && (typeof m.content === 'string' || !m.content.some((b) => b.type === 'tool_result'))
   const trimmed = (msgs) => {
     let start = Math.max(0, msgs.length - 24)
-    while (start < msgs.length && !(msgs[start].role === 'user' && typeof msgs[start].content === 'string')) start++
+    while (start < msgs.length && !isUserTurn(msgs[start])) start++
     return msgs.slice(start)
   }
+  // Photos/PDFs are only sent with the message they belong to; afterwards a short note stands in,
+  // so later requests (and saved chats) stay small.
+  const lighten = (msgs, keepLast = true) => {
+    const lastUser = keepLast ? msgs.map(isUserTurn).lastIndexOf(true) : -1
+    return msgs.map((m, i) => (i === lastUser || !Array.isArray(m.content) ? m : {
+      ...m, content: m.content.map((b) => (b.type === 'image' ? { type: 'text', text: '[photo shared earlier]' } : b.type === 'document' ? { type: 'text', text: '[PDF shared earlier]' } : b)),
+    }))
+  }
 
-  const send = async (text) => {
-    const trimmedText = text.trim()
-    if (!trimmedText || loading) return
+  const send = async (text, extra = {}) => {
+    const trimmedText = String(text || '').trim()
+    const atts = extra.files || []
+    if ((!trimmedText && !atts.length) || loading) return
     markProgress?.('askedButler')
-    push({ kind: 'user', text: trimmedText })
+    push({ kind: 'user', text: trimmedText, ...(extra.voice ? { voice: extra.voice } : {}), ...(atts.length ? { files: atts.map(({ kind, name, thumb, duration }) => ({ kind, name, thumb, duration })) } : {}) })
     setInput('')
+    setFiles([])
     setLoading(true)
-    let msgs = [...api, { role: 'user', content: trimmedText }]
+    const words = extra.voice ? `(Voice note) ${trimmedText}` : trimmedText || (atts.length ? 'What can you tell me from this?' : '')
+    const content = atts.length ? [...atts.flatMap((f) => f.blocks), { type: 'text', text: words }] : words
+    let msgs = [...api, { role: 'user', content }]
     const undoId = Math.random().toString(36).slice(2)
     let changed = false
     try {
@@ -159,7 +232,7 @@ export default function AssistantPage(props) {
             profile: p.profile, transactions: p.transactions, inventory: p.inventory, shoppingList: p.shoppingList, model: p.model, name: p.account?.name,
             memories: p.butler?.memories, userId: p.butler?.userId, recentChats: p.recentChats,
           }),
-          messages: trimmed(msgs),
+          messages: trimmed(lighten(msgs)),
         })
         const blocks = (data.content || []).filter((b) => b.type === 'text' || b.type === 'tool_use')
         msgs = [...msgs, { role: 'assistant', content: blocks.length ? blocks : [{ type: 'text', text: '…' }] }]
@@ -185,12 +258,13 @@ export default function AssistantPage(props) {
       // Drop the unanswered tail so the next message starts clean
       while (msgs.length && msgs[msgs.length - 1].role === 'user') msgs = msgs.slice(0, -1)
     } finally {
+      msgs = lighten(msgs, false)
       setApi(msgs)
       setLoading(false)
       // Save the conversation to the account (private to this person)
       try {
         const first = feedRef.current.find((x) => x.kind === 'user')
-        const id = await butler.saveChat({ id: chatRef.current, title: chatTitle(first?.text || trimmedText), messages: msgs, feed: feedRef.current })
+        const id = await butler.saveChat({ id: chatRef.current, title: chatTitle(first?.text || trimmedText || (atts[0] ? `${atts[0].kind[0].toUpperCase()}${atts[0].kind.slice(1)}: ${atts[0].name}` : '')), messages: msgs, feed: feedRef.current })
         if (id && id !== chatRef.current) { chatRef.current = id; setChatId(id) }
         refreshChats?.()
       } catch { /* saved locally; will retry with the next message */ }
@@ -201,6 +275,71 @@ export default function AssistantPage(props) {
     try { await butler.removeMemory(m.memoryId); setFeed((f) => f.map((x) => (x.id === m.id ? { ...x, forgotten: true } : x))) } catch { /* offline */ }
   }
   const newChat = () => { if (!loading) setChatId(null) }
+
+  /* ----- attachments ----- */
+  const pickFiles = (e) => {
+    const list = [...(e.target.files || [])].slice(0, 6)
+    e.target.value = ''
+    list.forEach((file) => {
+      const id = Math.random().toString(36).slice(2)
+      setFiles((f) => [...f, { id, kind: kindOf(file) || 'file', name: file.name, status: 'working' }])
+      prepareFile(file)
+        .then((ready) => setFiles((f) => f.map((x) => (x.id === id ? { ...ready, id, status: 'ready' } : x))))
+        .catch((err) => setFiles((f) => f.map((x) => (x.id === id ? { ...x, status: 'error', error: err.message } : x))))
+    })
+  }
+  const working = files.some((f) => f.status === 'working')
+  const ready = files.filter((f) => f.status === 'ready')
+  const submit = () => {
+    if (working || loading) return
+    const bytes = ready.reduce((s, f) => s + f.blocks.reduce((t, b) => t + (b.source?.data?.length || 0), 0), 0)
+    if (bytes > 3_400_000) { push({ kind: 'error', text: 'That’s too much to send in one go — try fewer photos or a shorter video.' }); return }
+    send(input, { files: ready })
+  }
+
+  /* ----- voice notes ----- */
+  const levelRef = useRef(0)
+  const startVoice = async () => {
+    if (rec || loading) return
+    if (voiceOk === false) {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+      if (SR) return listen()
+      push({ kind: 'error', text: 'Voice notes aren’t switched on yet — a transcription key needs adding to the app’s settings. You can use the microphone on your keyboard to dictate meanwhile.' })
+      return
+    }
+    try {
+      const recorder = await startRecorder((l) => { levelRef.current = l })
+      setRec({ recorder, seconds: 0, level: 0 })
+    } catch {
+      push({ kind: 'error', text: 'I couldn’t use the microphone. Allow microphone access for this app in Settings, then try again.' })
+    }
+  }
+  useEffect(() => {
+    if (!rec) return
+    const t = setInterval(() => {
+      const seconds = (Date.now() - rec.recorder.started) / 1000
+      setRec((r) => (r ? { ...r, seconds, level: levelRef.current } : r))
+      if (seconds >= MAX_VOICE_SECONDS) sendVoice()
+    }, 100)
+    return () => clearInterval(t)
+  }, [rec?.recorder]) // eslint-disable-line react-hooks/exhaustive-deps
+  const cancelVoice = () => { rec?.recorder.cancel(); setRec(null) }
+  const [transcribing, setTranscribing] = useState(false)
+  const sendVoice = async () => {
+    const r = rec
+    if (!r) return
+    setRec(null)
+    setTranscribing(true)
+    try {
+      const blob = await r.recorder.stop()
+      const { text, duration } = await transcribe(blob)
+      if (!text) push({ kind: 'error', text: 'I didn’t catch anything in that voice note — try again a little closer to the mic.' })
+      else { setTranscribing(false); await send(text, { voice: { duration } }); return }
+    } catch (e) {
+      push({ kind: 'error', text: e?.message || 'Couldn’t transcribe that voice note. Try again.' })
+    }
+    setTranscribing(false)
+  }
 
   const listen = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -270,7 +409,7 @@ export default function AssistantPage(props) {
         )}
 
         {feed.map((m) => {
-          if (m.kind === 'user') return <UserBubble key={m.id} text={m.text} />
+          if (m.kind === 'user') return <UserBubble key={m.id} m={m} />
           if (m.kind === 'action') return (
             <div key={m.id} className="pb-msg" style={{ display: 'flex', alignItems: 'center', gap: 8, background: m.undone ? C.row : C.amber, padding: '10px 12px', width: 'min(300px, 100%)', flexShrink: 0 }}>
               <Icon name={m.undone ? 'refresh@16' : 'check@16'} />
@@ -305,18 +444,53 @@ export default function AssistantPage(props) {
             </button>
           ))}
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); send(input) }}
-          style={{ display: 'flex', alignItems: 'center', gap: 12, height: 52, padding: '0 8px 0 16px', background: C.composer }}>
-          <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask anything…" aria-label="Message Butler"
-            style={{ ...sans(14, 400, { color: C.ink }), flex: 1, minWidth: 0, height: '100%' }} />
-          <button type="button" aria-label="Dictate" onClick={listen} style={{ ...reset, display: 'flex', opacity: listening ? 0.5 : 1 }}>
-            <Icon name="mic@18" />
-          </button>
-          <button type="submit" aria-label="Send" disabled={loading}
-            style={{ ...reset, width: 40, height: 40, background: C.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Icon name="send@16" color={C.amber} />
-          </button>
-        </form>
+        {files.length > 0 && (
+          <div className="pb-noscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingTop: 4 }}>
+            {files.map((f) => (
+              <div key={f.id} className="pb-msg" style={{ position: 'relative', flexShrink: 0, outline: f.status === 'error' ? `2px solid ${C.ember}` : 'none' }} title={f.error || f.name}>
+                <FileThumb f={f.status === 'ready' ? f : { ...f, thumb: null }} size={56} />
+                {f.status === 'working' && (
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(18,38,35,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span className="pb-spinner" />
+                  </div>
+                )}
+                <button aria-label={`Remove ${f.name}`} onClick={() => setFiles((x) => x.filter((y) => y.id !== f.id))}
+                  style={{ ...reset, position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10, background: C.ink, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={mono(11, 500, { color: C.cream, lineHeight: '11px' })}>×</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {files.some((f) => f.status === 'error') && (
+          <span style={sans(12, 400, { color: C.ember })}>{files.find((f) => f.status === 'error').error}</span>
+        )}
+        {rec ? (
+          <Recorder level={rec.level} seconds={rec.seconds} onCancel={cancelVoice} onSend={sendVoice} />
+        ) : (
+          <form onSubmit={(e) => { e.preventDefault(); submit() }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, height: 52, padding: '0 8px 0 6px', background: C.composer }}>
+            <button type="button" aria-label="Attach photo, video, audio or PDF" onClick={() => fileRef.current?.click()}
+              style={{ ...reset, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon name="clip@18" />
+            </button>
+            <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)}
+              placeholder={transcribing ? 'Transcribing your voice note…' : files.length ? 'Add a message (optional)…' : 'Ask anything…'} aria-label="Message Butler"
+              style={{ ...sans(14, 400, { color: C.ink }), flex: 1, minWidth: 0, height: '100%' }} />
+            {input.trim() || files.length ? (
+              <button type="submit" aria-label="Send" disabled={loading || working}
+                style={{ ...reset, width: 40, height: 40, background: C.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {working ? <span className="pb-spinner" /> : <Icon name="send@16" color={C.amber} />}
+              </button>
+            ) : (
+              <button type="button" aria-label="Record a voice note" onClick={startVoice} disabled={loading || transcribing}
+                style={{ ...reset, width: 40, height: 40, background: transcribing ? C.ink : C.amber, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: listening ? 0.6 : 1 }}>
+                {transcribing ? <span className="pb-spinner" /> : <Icon name="mic@18" />}
+              </button>
+            )}
+            <input ref={fileRef} type="file" accept="image/*,video/*,audio/*,application/pdf" multiple onChange={pickFiles} style={{ display: 'none' }} />
+          </form>
+        )}
       </div>
     </div>
   )
