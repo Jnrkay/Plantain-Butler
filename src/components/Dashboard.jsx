@@ -54,8 +54,8 @@ const STEPS = [
 const COLLAPSE_KEY = 'pb-checklist-collapsed'
 
 function GettingStarted({ profile, inventory, transactions, openSheet, setPage, saveProfile }) {
-  // Open or folded is remembered on this phone
-  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(COLLAPSE_KEY) === '1' } catch { return false } })
+  // Folded by default; opening it is remembered on this phone
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(COLLAPSE_KEY) !== '0' } catch { return true } })
   const toggle = () => setCollapsed((c) => { try { localStorage.setItem(COLLAPSE_KEY, c ? '0' : '1') } catch { /* ignore */ } return !c })
   const progress = profile?.progress || {}
   if (progress.hideChecklist) return null
