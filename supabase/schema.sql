@@ -290,3 +290,67 @@ end $$;
 
 revoke all on function public.create_invite(), public.join_household(text), public.leave_household(), public.remove_member(uuid), public.list_members() from public, anon;
 grant execute on function public.create_invite(), public.join_household(text), public.leave_household(), public.remove_member(uuid), public.list_members() to authenticated;
+
+-- =====================================================================
+-- v4 — Butler chat history and memory (additive only)
+-- =====================================================================
+-- Conversations are private to the person who had them.
+create table if not exists public.butler_chats (
+  id           uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  user_id      uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  title        text not null default 'New chat',
+  messages     jsonb not null default '[]'::jsonb,   -- what Butler sees (incl. tool calls)
+  feed         jsonb not null default '[]'::jsonb,   -- what's shown in the chat
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+create index if not exists butler_chats_user_idx on public.butler_chats(user_id, updated_at desc);
+
+-- Things Butler has learned. 'household' facts are shared with everyone in the household;
+-- 'personal' ones are only ever visible to the person they came from.
+create table if not exists public.butler_memories (
+  id           uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  user_id      uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  scope        text not null default 'household' check (scope in ('household', 'personal')),
+  fact         text not null check (length(fact) between 1 and 500),
+  chat_id      uuid references public.butler_chats(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+create index if not exists butler_memories_household_idx on public.butler_memories(household_id);
+
+do $$
+declare t text;
+begin
+  foreach t in array array['butler_chats', 'butler_memories'] loop
+    execute format('drop trigger if exists %I_touch on public.%I', t, t);
+    execute format('create trigger %I_touch before update on public.%I for each row execute function public.touch_updated_at()', t, t);
+  end loop;
+end $$;
+
+alter table public.butler_chats    enable row level security;
+alter table public.butler_memories enable row level security;
+
+drop policy if exists butler_chats_own on public.butler_chats;
+create policy butler_chats_own on public.butler_chats for all to authenticated
+  using (user_id = auth.uid() and public.is_household_member(household_id))
+  with check (user_id = auth.uid() and public.is_household_member(household_id));
+
+drop policy if exists butler_memories_select on public.butler_memories;
+create policy butler_memories_select on public.butler_memories for select to authenticated
+  using (public.is_household_member(household_id) and (scope = 'household' or user_id = auth.uid()));
+drop policy if exists butler_memories_insert on public.butler_memories;
+create policy butler_memories_insert on public.butler_memories for insert to authenticated
+  with check (user_id = auth.uid() and public.is_household_member(household_id));
+drop policy if exists butler_memories_change on public.butler_memories;
+create policy butler_memories_change on public.butler_memories for update to authenticated
+  using (public.is_household_member(household_id) and (scope = 'household' or user_id = auth.uid()))
+  with check (public.is_household_member(household_id) and (scope = 'household' or user_id = auth.uid()));
+drop policy if exists butler_memories_delete on public.butler_memories;
+create policy butler_memories_delete on public.butler_memories for delete to authenticated
+  using (public.is_household_member(household_id) and (scope = 'household' or user_id = auth.uid()));
+
+grant select, insert, update, delete on public.butler_chats, public.butler_memories to authenticated;
+revoke all on public.butler_chats, public.butler_memories from anon;
