@@ -13,6 +13,8 @@ const vv = window.visualViewport
 const syncViewport = () => {
   const r = document.documentElement.style
   r.setProperty('--vvh', `${vv ? vv.height : window.innerHeight}px`)
+  // How far iOS has slid the app up to make room for the keyboard (0 when it hasn't)
+  r.setProperty('--vvt', `${vv ? Math.max(0, Math.round(vv.offsetTop)) : 0}px`)
   document.documentElement.classList.toggle('pb-keyboard', !!vv && window.innerHeight - vv.height > 120)
 }
 // If iOS still scrolls the (pinned) page while a sheet is open, put it straight back

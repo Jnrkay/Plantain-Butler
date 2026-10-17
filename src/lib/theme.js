@@ -15,7 +15,7 @@ export const C = {
   field: '#f0f5f4',        // input surface
   composer: '#cadad6',     // chat input
   white: '#ffffff',
-  scrim: 'rgba(14,8,15,0.55)',
+  scrim: 'rgba(14,8,15,0.45)',
 
   ink90: 'rgba(18,38,35,0.9)',
   ink80: 'rgba(18,38,35,0.8)',
