@@ -567,7 +567,7 @@ function ConfirmDialog({ onClose, title, body, confirmLabel, onConfirm, withBack
     <Overlay onClose={onClose}>
       <div role="alertdialog" aria-label={title}
         style={{
-          position: 'absolute', left: '50%', top: 'min(calc(env(safe-area-inset-top, 0px) + 212px), 50%)', transform: 'translateX(-50%)', width: 'min(330px, calc(100vw - 60px))',
+          position: 'absolute', left: 0, right: 0, margin: '0 auto', top: 'min(calc(env(safe-area-inset-top, 0px) + 212px), 50%)', width: 'min(330px, calc(100vw - 60px))',
           background: C.white, padding: 20, display: 'flex', flexDirection: 'column', gap: 16, animation: 'pb-pop-in .2s var(--ease-out)',
         }}>
         <div style={{ width: 44, height: 44, background: C.ember, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

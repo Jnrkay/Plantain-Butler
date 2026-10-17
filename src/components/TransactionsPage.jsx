@@ -4,6 +4,7 @@ import { C, TX, sans, mono, TAB_CLEARANCE } from '../lib/theme'
 import { today, monthKey } from '../lib/utils'
 import { availableMonths, daysInMonth, dateGroupLabel, shortDate, monthTitle, txInMonth, lineTotal, sum, money, categoryIcon, withQty } from '../lib/derive'
 import { Header, TitleRow, AddButton, Tag, Money, Chip, ChipRow, Thumb, LabelRow, reset } from './ui'
+import { findItem } from '../lib/learn'
 
 function DailySpend({ tx, mk }) {
   const days = daysInMonth(mk)
@@ -70,8 +71,7 @@ export default function TransactionsPage({ header, transactions, saveTx, invento
 
   // Deleting a purchase takes what it added back out of stock
   const confirmDelete = (t) => {
-    const key = String(t.item).toLowerCase().trim()
-    const inv = inventory.find((i) => i.name.toLowerCase().trim() === key)
+    const inv = findItem(inventory, t)
     const n = Number(t.qty) || 1
     const takeOff = inv ? Math.min(n, Number(inv.qty) || 0) : 0
     openSheet('confirm', {
