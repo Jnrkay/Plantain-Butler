@@ -13,7 +13,6 @@ const vv = window.visualViewport
 const syncViewport = () => {
   const r = document.documentElement.style
   r.setProperty('--vvh', `${vv ? vv.height : window.innerHeight}px`)
-  r.setProperty('--vvt', `${vv ? Math.max(0, vv.offsetTop) : 0}px`)
   document.documentElement.classList.toggle('pb-keyboard', !!vv && window.innerHeight - vv.height > 120)
 }
 vv?.addEventListener('resize', syncViewport)

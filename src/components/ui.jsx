@@ -306,6 +306,7 @@ export function QtyStepper({ value, onChange, min = 1 }) {
 // straight to another (item → edit) swaps the content in place instead of re-sliding.
 const SheetCtx = createContext(null)
 let lastSheetUnmount = 0
+let dimCount = 0
 
 export function Sheet({ onClose, children, gap = 16, label }) {
   const [swap] = useState(() => Date.now() - lastSheetUnmount < 160)
@@ -326,6 +327,13 @@ export function Sheet({ onClose, children, gap = 16, label }) {
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
   }, [close])
   useEffect(() => () => { lastSheetUnmount = Date.now() }, [])
+  // The strip behind the iPhone status bar dims with the page, and lightens as the sheet closes
+  useEffect(() => {
+    if (closing) return
+    dimCount++
+    document.documentElement.classList.add('pb-dim')
+    return () => { if (--dimCount <= 0) { dimCount = 0; document.documentElement.classList.remove('pb-dim') } }
+  }, [closing])
 
   // Drag the top of the sheet down to dismiss it
   const onPointerDown = (e) => {
@@ -352,7 +360,7 @@ export function Sheet({ onClose, children, gap = 16, label }) {
 
   return (
     <SheetCtx.Provider value={close}>
-      <div role="dialog" aria-modal="true" aria-label={label} style={{ position: 'fixed', left: 0, right: 0, top: 'var(--vvt, 0px)', height: 'var(--vvh, 100dvh)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div role="dialog" aria-modal="true" aria-label={label} style={{ position: 'fixed', left: 0, right: 0, top: 0, height: 'var(--vvh, 100dvh)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
         <div onClick={close} style={{ position: 'absolute', inset: 0, background: C.scrim, animation: closing ? 'pb-fade-out .18s ease both' : swap ? 'none' : 'pb-fade-in .22s ease' }} />
         <div
           ref={panel}

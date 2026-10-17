@@ -15,12 +15,16 @@ html { background: #eeefe0; }
 
 /* Status bar strip + a soft fade under it, so scrolled content eases out instead of hard-cropping */
 .pb-statusbar {
-  /* Above everything (sheets included) and pinned to the visible top, so iOS always tints the bar cream */
-  position: fixed; top: var(--vvt, 0px); left: 0; right: 0; z-index: 1000; pointer-events: none;
+  /* Above everything (sheets included). Cream normally; dims with the page while a sheet is open,
+     then returns to cream — so the area behind the clock always matches what's beneath it. */
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000; pointer-events: none;
   height: max(4px, env(safe-area-inset-top, 0px)); background: #eeefe0;
+  transition: background-color .22s ease;
 }
+/* Same colour as the sheet's dim layer (rgba(14,8,15,.55)) laid over cream */
+html.pb-dim .pb-statusbar { background: #736f6c; }
 .pb-topfade {
-  position: fixed; left: 0; right: 0; top: calc(var(--vvt, 0px) + max(4px, env(safe-area-inset-top, 0px))); z-index: 45; pointer-events: none;
+  position: fixed; left: 0; right: 0; top: max(4px, env(safe-area-inset-top, 0px)); z-index: 45; pointer-events: none;
   height: 18px; background: linear-gradient(#eeefe0, rgba(238, 239, 224, 0));
   opacity: 0; transition: opacity .2s ease;
 }
