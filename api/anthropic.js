@@ -8,7 +8,8 @@ export const config = { maxDuration: 60 }
 
 const MODEL = 'claude-sonnet-5-5'
 const MAX_OUTPUT_TOKENS = 2048
-const DAILY_LIMIT = Number(process.env.BUTLER_DAILY_LIMIT) || 60
+const BLOCK_TYPES = new Set(['text', 'image', 'tool_use', 'tool_result'])
+const DAILY_LIMIT = Number(process.env.BUTLER_DAILY_LIMIT) || 100
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || PUBLIC_URL).replace(/\/$/, '')
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || PUBLIC_KEY
@@ -32,7 +33,8 @@ async function countRequest(token) {
 
 function cleanBody(b) {
   if (!b || typeof b !== 'object' || !Array.isArray(b.messages) || !b.messages.length) return null
-  const messages = b.messages.slice(-30).filter((m) => m && (m.role === 'user' || m.role === 'assistant') && m.content)
+  const okContent = (c) => typeof c === 'string' ? c.length > 0 : Array.isArray(c) && c.length > 0 && c.every((x) => x && BLOCK_TYPES.has(x.type))
+  const messages = b.messages.slice(-40).filter((m) => m && (m.role === 'user' || m.role === 'assistant') && okContent(m.content))
   if (!messages.length || messages[0].role !== 'user') {
     while (messages.length && messages[0].role !== 'user') messages.shift()
     if (!messages.length) return null
@@ -42,7 +44,13 @@ function cleanBody(b) {
     max_tokens: Math.min(Math.max(Number(b.max_tokens) || 1024, 64), MAX_OUTPUT_TOKENS),
     messages,
   }
-  if (typeof b.system === 'string') out.system = b.system.slice(0, 30000)
+  if (typeof b.system === 'string') out.system = b.system.slice(0, 40000)
+  // Tools are executed by the app on the user's own data; only well-formed definitions pass
+  if (Array.isArray(b.tools) && b.tools.length) {
+    const tools = b.tools.slice(0, 12).filter((t) => t && /^[a-z_]{1,40}$/.test(t.name) && t.input_schema && typeof t.input_schema === 'object')
+      .map((t) => ({ name: t.name, description: String(t.description || '').slice(0, 1000), input_schema: t.input_schema }))
+    if (tools.length && JSON.stringify(tools).length < 20000) out.tools = tools
+  }
   return out
 }
 
