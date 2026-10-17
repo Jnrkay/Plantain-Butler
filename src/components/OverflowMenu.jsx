@@ -79,13 +79,14 @@ export default function OverflowMenu({ profile, openSheet, onClose, account, sav
       >
         <button onClick={() => openSheet('profile')} className="pb-menu-item"
           style={{ ...reset, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: `1px solid ${C.ink12}` }}>
-          <Avatar text={initials(profile?.name)} size={32} />
+          <Avatar text={initials(account?.name || profile?.name)} size={32} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={sans(14, 500, { color: C.ink })}>{String(profile?.name || '').trim().split(/\s+/)[0] || 'Your household'}</span>
+            <span style={sans(14, 500, { color: C.ink })}>{String(account?.name || profile?.name || '').trim().split(/\s+/)[0] || 'Your household'}</span>
             <span style={sans(11, 400, { color: account?.sync?.state === 'error' ? C.ember : C.ink80 })}>{account ? syncLabel(account.sync) : 'Profile & settings'}</span>
           </div>
         </button>
         <Item icon="user" label="Household profile" onClick={() => openSheet('profile')} />
+        {account && <Item icon="home" label="Household & sharing" onClick={() => openSheet('household')} />}
         <Item icon="wallet" label="Budgets" meta={budget ? money(budget, 0) : undefined} onClick={() => openSheet('budgets')} />
         <Item icon="store" label="My stores" meta={(profile?.stores || []).length || undefined} onClick={() => openSheet('stores')} />
         <Item icon="leaf" label="Dietary preferences" onClick={() => openSheet('dietary')} />

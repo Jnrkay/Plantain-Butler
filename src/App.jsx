@@ -1,9 +1,11 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { DEFAULT_PROFILE } from './lib/constants'
 import { useHouseholdStore } from './lib/store'
 import { uid, today, monthKey } from './lib/utils'
 import { C, sans } from './lib/theme'
-import { initials as toInitials, lineTotal, sum, isLow, annotateDue } from './lib/derive'
+import { initials as toInitials, lineTotal, sum, isLow, withQty } from './lib/derive'
+import { buildModel, annotate, typeOf, typeKey, ruleType, guessBrand, findItem, learnFromCount } from './lib/learn'
+import { classifyNames } from './lib/ai'
 import { Icon, reset } from './components/ui'
 
 import Onboarding from './components/Onboarding'
@@ -20,6 +22,19 @@ import LinkData from './components/LinkData'
 import { Button } from './components/ui'
 import PullToRefresh from './components/PullToRefresh'
 import UpdateBanner from './components/UpdateBanner'
+
+const clean = (i) => Object.fromEntries(Object.entries(i).filter(([k]) => !k.startsWith('_')))
+const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10
+// One entry per product type (the most recently bought item stands in for its type)
+const lowByType = (inventory) => {
+  const seen = new Map()
+  inventory.filter(isLow).forEach((i) => {
+    const k = typeKey(typeOf(i))
+    const cur = seen.get(k)
+    if (!cur || String(i.lastPurchased || '') > String(cur.lastPurchased || '')) seen.set(k, i)
+  })
+  return [...seen.values()]
+}
 
 // Tab bar (23:5697) — labels and icons exactly as in Figma
 const TABS = [
@@ -78,47 +93,118 @@ export default function App() {
   const [sheet, setSheet] = useState(null) // { type, ...props }
   const [menuOpen, setMenuOpen] = useState(false)
   const store = useHouseholdStore()
-  const { profile, transactions, budgets, shoppingList, saveProfile, saveTx, saveBudgets, saveSL } = store
-  // Screens see `_due` on items past their usual rebuy time; it's stripped before saving.
-  const inventory = useMemo(() => annotateDue(store.inventory, transactions), [store.inventory, transactions])
-  const saveInv = useCallback((list) => store.saveInv(list.map(({ _due, ...i }) => i)), [store.saveInv])
+  const { profile, transactions, budgets, shoppingList, learning, saveProfile, saveTx, saveBudgets, saveSL, saveLearning } = store
+  // Butler's learning model: per product type usage, estimates and status.
+  // Screens get items with `_`-prefixed model fields; those are stripped before saving.
+  const model = useMemo(() => buildModel(store.inventory, transactions, learning), [store.inventory, transactions, learning])
+  const inventory = useMemo(() => annotate(store.inventory, model), [store.inventory, model])
+  const saveInv = useCallback((list) => store.saveInv(list.map(clean)), [store.saveInv])
+  const myName = store.session?.user?.user_metadata?.name || profile?.name || ''
+  const markProgress = useCallback((key) => {
+    if (profile?.progress?.[key]) return
+    saveProfile({ ...profile, progress: { ...(profile?.progress || {}), [key]: true } })
+  }, [profile, saveProfile])
+
+  // Sort new item names into brand + product type in the background (one Butler call per batch)
+  const classifying = useRef(0)
+  useEffect(() => {
+    if (store.phase !== 'ready' || !profile?.onboarded || Date.now() - classifying.current < 120000) return
+    let done = new Set()
+    try { done = new Set(JSON.parse(localStorage.getItem('pb-classified') || '[]')) } catch { /* ignore */ }
+    const pending = [...new Set([
+      ...store.inventory.filter((i) => !i.productType).map((i) => i.name),
+      ...transactions.filter((t) => !t.productType).map((t) => t.item),
+    ].map((n) => String(n || '').trim()).filter((n) => n && !done.has(n.toLowerCase())))].slice(0, 60)
+    if (!pending.length) return
+    const timer = setTimeout(async () => {
+      classifying.current = Date.now()
+      try {
+        const found = await classifyNames(pending)
+        const by = Object.fromEntries(found.map((f) => [String(f.name).toLowerCase().trim(), f]))
+        const fill = (x, nameKey) => {
+          const f = by[String(x[nameKey] || '').toLowerCase().trim()]
+          if (!f || x.productType) return x
+          return { ...x, productType: f.type || '', brand: x.brand || f.brand || '' }
+        }
+        const inv2 = store.inventory.map((i) => fill(i, 'name'))
+        const tx2 = transactions.map((t) => fill(t, 'item'))
+        if (inv2.some((x, i) => x !== store.inventory[i])) store.saveInv(inv2)
+        if (tx2.some((x, i) => x !== transactions[i])) saveTx(tx2)
+        pending.forEach((n) => done.add(n.toLowerCase()))
+        localStorage.setItem('pb-classified', JSON.stringify([...done].slice(-2000)))
+      } catch { /* try again later */ }
+    }, 3000)
+    return () => clearTimeout(timer)
+  }, [store.phase, profile?.onboarded, store.inventory, transactions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const setPage = useCallback((p) => { setPageRaw(p); setMenuOpen(false); window.scrollTo(0, 0) }, [])
 
-  const addTransaction = (items, store, date) => {
-    const newTx = items.map((it) => ({
-      id: uid(),
-      item: String(it.item).trim(),
-      qty: Number(it.qty) || 1,
-      price: Number(it.price) || 0,
-      category: it.category || 'Other',
-      store: store || '',
-      date: date || today(),
-    }))
+  const addTransaction = (items, shop, date) => {
+    let inv = store.inventory.map(clean)
+    const newTx = items.map((it) => {
+      const name = String(it.item).trim()
+      const tx = {
+        id: uid(), item: name, qty: Number(it.qty) || 1, price: Number(it.price) || 0, category: it.category || 'Other',
+        store: shop || '', date: date || today(),
+        brand: String(it.brand || '').trim(), productType: String(it.productType || '').trim(),
+      }
+      // Borrow brand/type from the item we already track, else from the built-in list
+      const known = findItem(inv, tx)
+      if (known) { tx.brand ||= known.brand || ''; tx.productType ||= known.productType || '' }
+      tx.brand ||= guessBrand(name)
+      tx.productType ||= ruleType(name)
+      // A new brand of something we already track joins that product's category
+      if (tx.category === 'Other' && tx.productType) {
+        const sibling = inv.find((i) => typeKey(typeOf(i)) === typeKey(tx.productType) && i.category && i.category !== 'Other')
+        if (sibling) tx.category = sibling.category
+      }
+      return tx
+    })
     saveTx([...newTx, ...transactions])
 
-    const inv = [...inventory]
+    // Before restocking, bring each bought type down to what Butler estimates is left
+    // (e.g. buying water because you ran out clears the old water that's been used up).
+    new Set(newTx.map((t) => typeKey(typeOf(t)))).forEach((k) => {
+      const T = model[k]
+      if (!T?.learned) return
+      inv = inv.map((i) => (T.itemEst[i.id] !== undefined ? { ...i, qty: round1(T.itemEst[i.id]) } : i))
+    })
     newTx.forEach((tx) => {
-      const idx = inv.findIndex((i) => i.name.toLowerCase().trim() === tx.item.toLowerCase())
-      if (idx >= 0) {
-        // A fresh purchase sets what "fully stocked" means for this item
-        const qty = (Number(inv[idx].qty) || 0) + tx.qty
-        const newer = !inv[idx].lastPurchased || tx.date >= inv[idx].lastPurchased
-        inv[idx] = {
-          ...inv[idx], qty, fullQty: qty, status: 'high',
-          ...(newer ? { lastPurchased: tx.date, lastPrice: tx.price, store: tx.store || inv[idx].store } : {}),
-        }
+      const hit = findItem(inv, tx)
+      if (hit) {
+        const qty = round1((Number(hit.qty) || 0) + tx.qty)
+        const newer = !hit.lastPurchased || tx.date >= hit.lastPurchased
+        inv = inv.map((i) => (i.id !== hit.id ? i : {
+          ...i, qty, fullQty: qty, status: 'high',
+          brand: i.brand || tx.brand, productType: i.productType || tx.productType,
+          ...(newer ? { lastPurchased: tx.date, lastPrice: tx.price, store: tx.store || i.store } : {}),
+        }))
       } else {
-        inv.push({ id: uid(), name: tx.item, qty: tx.qty, fullQty: tx.qty, category: tx.category, lastPurchased: tx.date, lastPrice: tx.price, store: tx.store, status: 'high' })
+        inv.push({ id: uid(), name: tx.item, qty: tx.qty, fullQty: tx.qty, category: tx.category, lastPurchased: tx.date, lastPrice: tx.price, store: tx.store, status: 'high', brand: tx.brand, productType: tx.productType })
       }
     })
-    saveInv(inv)
+    store.saveInv(inv)
 
-    // Tick off anything on the shopping list that was just bought
+    // Tick off anything on the shopping list that was just bought (by name or by type)
     const bought = new Set(newTx.map((t) => t.item.toLowerCase()))
-    if (shoppingList.some((s) => !s.checked && bought.has(String(s.name).toLowerCase().trim()))) {
-      saveSL(shoppingList.map((s) => (bought.has(String(s.name).toLowerCase().trim()) ? { ...s, checked: true } : s)))
-    }
+    const boughtTypes = new Set(newTx.map((t) => typeKey(typeOf(t))))
+    const isBought = (s) => bought.has(String(s.name).toLowerCase().trim()) || boughtTypes.has(typeKey(typeOf({ name: s.name, productType: s.productType })))
+    if (shoppingList.some((s) => !s.checked && isBought(s))) saveSL(shoppingList.map((s) => (!s.checked && isBought(s) ? { ...s, checked: true } : s)))
+  }
+
+  // A stock count for one item. `base` is the type's model when the count started,
+  // so tapping +/− several times teaches Butler once, not once per tap.
+  const recordCount = (itemId, qty, base, forceStatus) => {
+    const ests = base?.itemEst || {}
+    const next = store.inventory.map((raw) => {
+      const i = clean(raw)
+      if (i.id === itemId) return forceStatus ? { ...withQty(i, qty), status: forceStatus } : withQty(i, qty)
+      if (ests[i.id] !== undefined) return { ...i, qty: round1(ests[i.id]) }
+      return i
+    })
+    const total = next.filter((i) => ests[i.id] !== undefined || i.id === itemId).reduce((s, i) => s + (Number(i.qty) || 0), 0)
+    store.saveInv(next)
+    if (base?.key) saveLearning(learnFromCount(learning, base, total))
   }
 
   const addToShoppingList = (entries) => {
@@ -142,7 +228,7 @@ export default function App() {
   }
 
   const genShoppingList = () => {
-    const low = inventory.filter(isLow)
+    const low = lowByType(inventory)
     const existing = new Set(shoppingList.map((s) => String(s.name).toLowerCase().trim()))
     const additions = low.filter((i) => !existing.has(i.name.toLowerCase().trim()))
     addToShoppingList(additions.map((i) => ({ name: i.name, qty: 1, estPrice: i.lastPrice, category: i.category, store: i.store })))
@@ -155,7 +241,7 @@ export default function App() {
     return {
       monthTx,
       totalSpend: sum(monthTx, lineTotal),
-      lowStock: inventory.filter(isLow),
+      lowStock: lowByType(inventory),
     }
   }, [transactions, inventory])
 
@@ -167,15 +253,21 @@ export default function App() {
   }
 
   if (!profile?.onboarded) {
-    return <Onboarding profile={profile || DEFAULT_PROFILE} saveProfile={saveProfile} />
+    return (
+      <Onboarding profile={profile || DEFAULT_PROFILE} saveProfile={saveProfile} saveInv={saveInv} inventory={store.inventory}
+        account={{ switchHousehold: store.switchHousehold }} onDone={(next) => { if (next) setSheet({ type: next }) }} />
+    )
   }
 
   const openSheet = (type, props = {}) => { setMenuOpen(false); setSheet({ type, ...props }) }
   const closeSheet = () => setSheet(null)
-  const header = { initials: toInitials(profile.name), onMenu: () => setMenuOpen((o) => !o), menuOpen }
+  const header = { initials: toInitials(myName), onMenu: () => setMenuOpen((o) => !o), menuOpen }
   const data = { profile, transactions, inventory, budgets, shoppingList }
-  const account = { email: store.session?.user?.email, sync: store.sync, signOut: store.signOut }
-  const actions = { saveProfile, saveTx, saveInv, saveBudgets, saveSL, addTransaction, addToShoppingList, genShoppingList, setPage, openSheet, account }
+  const account = { email: store.session?.user?.email, name: myName, sync: store.sync, signOut: store.signOut, switchHousehold: store.switchHousehold }
+  const actions = {
+    saveProfile, saveTx, saveInv, saveBudgets, saveSL, saveLearning, addTransaction, addToShoppingList, genShoppingList,
+    recordCount, markProgress, setPage, openSheet, account, model, learning,
+  }
 
   const pages = {
     dashboard: <Dashboard {...data} {...derived} {...actions} header={header} />,

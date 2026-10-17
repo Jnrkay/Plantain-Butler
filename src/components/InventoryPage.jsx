@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react'
 import { C, TX, sans, mono, TAB_CLEARANCE } from '../lib/theme'
 import { money, pad2, stockOf, categoryIcon, isLow } from '../lib/derive'
+import { typeOf } from '../lib/learn'
 import { Header, TitleRow, AddButton, Chip, ChipRow, Thumb, StockMeter, Icon, Checkbox, Segmented, Overlay, reset } from './ui'
 
 const SORTS = [
@@ -13,6 +14,9 @@ const SORTS = [
 const STATUS_OPTS = [
   { value: 'any', label: 'Any' }, { value: 'high', label: 'OK' }, { value: 'medium', label: 'Low' }, { value: 'low', label: 'Out' },
 ]
+
+const shownQty = (i) => Math.round(i._est ?? (Number(i.qty) || 0))
+const isEstimate = (i) => i._model?.learned && Math.abs((i._est ?? 0) - (Number(i.qty) || 0)) >= 0.5
 
 export function ItemRow({ item, onClick }) {
   const status = stockOf(item)
@@ -26,13 +30,13 @@ export function ItemRow({ item, onClick }) {
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ ...TX.rowName, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
         <span style={{ ...TX.micro, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {(item.category || 'Other').toUpperCase()}{item.lastPrice ? ` · GHS ${money(item.lastPrice)}` : ''}
+          {typeOf(item).toUpperCase()}{item._brand ? ` · ${item._brand.toUpperCase()}` : ''}{item.lastPrice ? ` · GHS ${money(item.lastPrice)}` : ''}
         </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-          <span style={mono(9, 400, { color: C.ink80 })}>QTY</span>
-          <span style={sans(28, 300, { lineHeight: '30px', letterSpacing: -0.56, color: C.ink })}>{pad2(item.qty)}</span>
+          <span style={mono(9, 400, { color: C.ink80 })}>{isEstimate(item) ? 'EST' : 'QTY'}</span>
+          <span style={sans(28, 300, { lineHeight: '30px', letterSpacing: -0.56, color: C.ink })}>{isEstimate(item) && <span style={{ color: C.ink55 }}>≈</span>}{pad2(shownQty(item))}</span>
         </div>
         <StockMeter status={status} />
       </div>
@@ -107,12 +111,13 @@ function FilterPopover({ cats, counts, filter, setFilter, resultCount, onClose }
 }
 
 const applyFilter = (inventory, q, f) => {
-  let list = inventory.filter((i) => i.name.toLowerCase().includes(q.trim().toLowerCase()))
+  const needle = q.trim().toLowerCase()
+  let list = inventory.filter((i) => [i.name, typeOf(i), i._brand].some((v) => String(v || '').toLowerCase().includes(needle)))
   if (f.cats.size) list = list.filter((i) => f.cats.has(i.category || 'Other'))
   if (f.status === 'lowish') list = list.filter(isLow)
   else if (f.status !== 'any') list = list.filter((i) => stockOf(i) === f.status)
   const by = {
-    qty: (a, b) => (Number(a.qty) || 0) - (Number(b.qty) || 0),
+    qty: (a, b) => shownQty(a) - shownQty(b),
     name: (a, b) => a.name.localeCompare(b.name),
     price: (a, b) => (Number(b.lastPrice) || 0) - (Number(a.lastPrice) || 0),
     recent: (a, b) => String(b.lastPurchased || '').localeCompare(String(a.lastPurchased || '')),

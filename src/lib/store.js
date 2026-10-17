@@ -15,6 +15,7 @@ import { uid, today } from './utils'
 /* ---------------- row mapping ---------------- */
 const num = (v, d = 0) => (Number.isFinite(Number(v)) && v !== '' && v !== null ? Number(v) : d)
 const numOrNull = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v))
+const strOrNull = (v) => (v === null || v === undefined || !String(v).trim() ? null : String(v).trim())
 const dateOrNull = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : null)
 const STATUSES = ['high', 'medium', 'low']
 
@@ -26,6 +27,7 @@ export const COLLECTIONS = {
       category: i.category || 'Other', status: STATUSES.includes(i.status) ? i.status : 'high',
       last_price: numOrNull(i.lastPrice), last_purchased: dateOrNull(i.lastPurchased), store: i.store || null,
       full_qty: numOrNull(i.fullQty), due_ack: dateOrNull(i.dueAck),
+      brand: strOrNull(i.brand), product_type: strOrNull(i.productType),
     }),
     fromRow: (r) => ({
       id: r.id, name: r.name, qty: Number(r.qty), category: r.category, status: r.status,
@@ -33,6 +35,7 @@ export const COLLECTIONS = {
       lastPurchased: r.last_purchased || undefined, store: r.store || '',
       fullQty: r.full_qty === null || r.full_qty === undefined ? undefined : Number(r.full_qty),
       dueAck: r.due_ack || undefined,
+      brand: r.brand || '', productType: r.product_type || '',
     }),
   },
   transactions: {
@@ -41,10 +44,11 @@ export const COLLECTIONS = {
       id: String(t.id), household_id: h, item: String(t.item || t.name || 'Unnamed').trim() || 'Unnamed',
       qty: num(t.qty, 1), price: num(t.price), category: t.category || 'Other', store: t.store || null,
       date: dateOrNull(t.date) || today(),
+      brand: strOrNull(t.brand), product_type: strOrNull(t.productType),
     }),
     fromRow: (r) => ({
       id: r.id, item: r.item, qty: Number(r.qty), price: Number(r.price), category: r.category,
-      store: r.store || '', date: r.date,
+      store: r.store || '', date: r.date, brand: r.brand || '', productType: r.product_type || '',
     }),
   },
   shoppingList: {
@@ -71,6 +75,11 @@ const LINK_KEY = 'pb-linked-household'
 const QUEUE_KEY = 'pb-sync-queue'
 const PROFILE_KEY = 'pb-profile'
 const BUDGETS_KEY = 'pb-budgets'
+const LEARNING_KEY = 'pb-learning'
+const SNAP_KEY = 'pb-last-synced'
+// Bump when the shape of synced rows changes, so an app update re-reads the account
+// before trusting this phone's saved snapshot (prevents stale overwrites after updates).
+const SNAP_V = 3
 
 const withIds = (list) => (Array.isArray(list) ? list : []).map((x) => (x && x.id ? x : { ...x, id: uid() }))
 
@@ -78,6 +87,7 @@ export function readLocalData() {
   return {
     profile: LS.get(PROFILE_KEY, null),
     budgets: LS.get(BUDGETS_KEY, {}),
+    learning: LS.get(LEARNING_KEY, {}),
     inventory: withIds(LS.get('pb-inventory', [])),
     transactions: withIds(LS.get('pb-transactions', [])),
     shoppingList: withIds(LS.get('pb-shopping-list', [])),
@@ -88,10 +98,11 @@ const hasData = (d) => !!(d.inventory.length || d.transactions.length || d.shopp
 function writeCache(data) {
   LS.set(PROFILE_KEY, data.profile)
   LS.set(BUDGETS_KEY, data.budgets)
+  LS.set(LEARNING_KEY, data.learning || {})
   KEYS.forEach((k) => LS.set(COLLECTIONS[k].cacheKey, data[k]))
 }
 export function clearLocalData() {
-  [PROFILE_KEY, BUDGETS_KEY, LINK_KEY, QUEUE_KEY, ...KEYS.map((k) => COLLECTIONS[k].cacheKey)].forEach(LS.del)
+  [PROFILE_KEY, BUDGETS_KEY, LEARNING_KEY, LINK_KEY, QUEUE_KEY, SNAP_KEY, ...KEYS.map((k) => COLLECTIONS[k].cacheKey)].forEach(LS.del)
   try { sessionStorage.removeItem('pb-butler-chat') } catch { /* ignore */ }
 }
 
@@ -110,11 +121,11 @@ async function fetchAll(table, hid) {
 
 async function loadCloud(hid) {
   const [{ data: hh, error }, ...lists] = await Promise.all([
-    supabase.from('households').select('profile,budgets').eq('id', hid).single(),
+    supabase.from('households').select('profile,budgets,learning').eq('id', hid).single(),
     ...KEYS.map((k) => fetchAll(COLLECTIONS[k].table, hid)),
   ])
   if (error) throw error
-  const out = { profile: hh.profile && Object.keys(hh.profile).length ? hh.profile : null, budgets: hh.budgets || {} }
+  const out = { profile: hh.profile && Object.keys(hh.profile).length ? hh.profile : null, budgets: hh.budgets || {}, learning: hh.learning || {} }
   KEYS.forEach((k, i) => { out[k] = lists[i].map(COLLECTIONS[k].fromRow) })
   return out
 }
@@ -123,6 +134,7 @@ async function uploadAll(hid, data) {
   const patch = {}
   if (data.profile) patch.profile = data.profile
   if (data.budgets && Object.keys(data.budgets).length) patch.budgets = data.budgets
+  if (data.learning && Object.keys(data.learning).length) patch.learning = data.learning
   if (Object.keys(patch).length) {
     const { error } = await supabase.from('households').update(patch).eq('id', hid)
     if (error) throw error
@@ -138,13 +150,15 @@ async function uploadAll(hid, data) {
 
 const snapshotOf = (k, list, hid) => new Map(list.map((x) => [String(x.id), JSON.stringify(COLLECTIONS[k].toRow(x, hid))]))
 
+const EMPTY = { profile: null, budgets: {}, learning: {}, inventory: [], transactions: [], shoppingList: [] }
+
 /* ---------------- the hook ---------------- */
 // phase: 'loading' | 'signedOut' | 'syncing' | 'link' | 'ready' | 'error'
 export function useHouseholdStore() {
   const [session, setSession] = useState(undefined)
   const [phase, setPhase] = useState('loading')
   const [error, setError] = useState('')
-  const [data, setData] = useState({ profile: null, budgets: {}, inventory: [], transactions: [], shoppingList: [] })
+  const [data, setData] = useState(EMPTY)
   const [sync, setSync] = useState({ state: 'idle', pending: 0, lastSynced: null })
   const [pendingLocal, setPendingLocal] = useState(null) // pre-account data awaiting a merge/discard decision
 
@@ -225,7 +239,7 @@ export function useHouseholdStore() {
   const applyData = useCallback((d, { fromCloud } = {}) => {
     const hid = hidRef.current
     const next = {
-      profile: d.profile || null, budgets: d.budgets || {},
+      profile: d.profile || null, budgets: d.budgets || {}, learning: d.learning || {},
       inventory: withIds(d.inventory), transactions: withIds(d.transactions), shoppingList: withIds(d.shoppingList),
     }
     if (fromCloud) KEYS.forEach((k) => { snap.current[k] = snapshotOf(k, next[k], hid) })
@@ -266,14 +280,16 @@ export function useHouseholdStore() {
       const linked = LS.get(LINK_KEY, null)
       const local = readLocalData()
       // Fast path: this device already belongs to the user's household — show the cache, then refresh.
+      const last = LS.get(SNAP_KEY, null)
+      const trusted = !!(linked && last && last._v === SNAP_V)
       if (linked) {
         hidRef.current = linked
         KEYS.forEach((k) => { snap.current[k] = snapshotOf(k, [], linked) })
         // Snapshot reflects what the cloud had at last sync; queued ops cover the rest.
-        const last = LS.get('pb-last-synced', null)
-        if (last) KEYS.forEach((k) => { snap.current[k] = new Map(Object.entries(last[k] || {})) })
+        if (trusted) KEYS.forEach((k) => { snap.current[k] = new Map(Object.entries(last[k] || {})) })
         applyData(local)
-        setPhase('ready')
+        // After an app update the saved snapshot can't be trusted: re-read the account first
+        setPhase(trusted ? 'ready' : 'syncing')
       } else {
         setPhase('syncing')
       }
@@ -282,7 +298,7 @@ export function useHouseholdStore() {
         if (e1) throw e1
         if (linked && linked !== hid) { clearLocalData(); queue.current = {}; persistQueue() }
         hidRef.current = hid
-        if (linked === hid) { await flush(); await refresh(); return }
+        if (linked === hid) { await flush(); await refresh(); setPhase('ready'); return }
 
         const cloud = await loadCloud(hid)
         const cloudEmpty = !hasData(cloud)
@@ -305,7 +321,7 @@ export function useHouseholdStore() {
         setSync({ state: 'synced', pending: 0, lastSynced: new Date() })
         setPhase('ready')
       } catch (e) {
-        if (linked) { setSync((s) => ({ ...s, state: 'offline' })); return } // keep working from the cache
+        if (linked) { setSync((s) => ({ ...s, state: 'offline' })); setPhase('ready'); return } // keep working from the cache
         setError(e?.message || 'Could not reach your account.')
         setPhase('error')
         booted.current = null
@@ -316,9 +332,9 @@ export function useHouseholdStore() {
   // Remember the cloud snapshot so a cold start offline still diffs correctly
   useEffect(() => {
     if (phase !== 'ready') return
-    const obj = {}
+    const obj = { _v: SNAP_V }
     KEYS.forEach((k) => { obj[k] = Object.fromEntries(snap.current[k] || []) })
-    LS.set('pb-last-synced', obj)
+    LS.set(SNAP_KEY, obj)
   }, [sync.lastSynced, phase])
 
   /* ----- saving ----- */
@@ -356,6 +372,7 @@ export function useHouseholdStore() {
   const actions = {
     saveProfile: saveHouseholdField('profile', PROFILE_KEY),
     saveBudgets: saveHouseholdField('budgets', BUDGETS_KEY),
+    saveLearning: saveHouseholdField('learning', LEARNING_KEY),
     saveInv: saveCollection('inventory'),
     saveTx: saveCollection('transactions'),
     saveSL: saveCollection('shoppingList'),
@@ -379,20 +396,36 @@ export function useHouseholdStore() {
     await flush()
     await supabase.auth.signOut().catch(() => {})
     clearLocalData()
-    LS.del('pb-last-synced')
     queue.current = {}
     hidRef.current = null
     snap.current = {}
-    setData({ profile: null, budgets: {}, inventory: [], transactions: [], shoppingList: [] })
+    setData(EMPTY)
     setSync({ state: 'idle', pending: 0, lastSynced: null })
   }, [flush])
+
+  // After joining or leaving a household: save pending edits, forget this phone's copy
+  // of the old household, and load the new active one from the account.
+  const switchHousehold = useCallback(async () => {
+    await flush()
+    clearLocalData()
+    queue.current = {}
+    persistQueue()
+    hidRef.current = null
+    snap.current = {}
+    setData(EMPTY)
+    setPhase('syncing')
+    booted.current = null
+    setSession((s) => (s ? { ...s } : s))
+  }, [flush]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const retry = useCallback(() => { setError(''); booted.current = null; setSession((s) => (s ? { ...s } : s)) }, [])
 
   return {
-    session, phase, error, sync, pendingLocal, retry, signOut, resolveLocal, refresh,
+    session, phase, error, sync, pendingLocal, retry, signOut, resolveLocal, refresh, switchHousehold,
+    householdId: hidRef.current,
     profile: data.profile || null,
     budgets: data.budgets || {},
+    learning: data.learning || {},
     inventory: data.inventory, transactions: data.transactions, shoppingList: data.shoppingList,
     ...actions,
     defaultProfile: DEFAULT_PROFILE,

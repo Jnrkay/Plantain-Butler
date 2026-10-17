@@ -6,7 +6,8 @@ import {
   availableMonths, daysInMonth, monthShort, txInMonth, lineTotal, sum, money, monthlyBudget,
   priceChanges, monthlyPriceSeries,
 } from '../lib/derive'
-import { Header, Tag, Money, Icon } from './ui'
+import { Header, Tag, Money, Icon, Segmented, reset } from './ui'
+import { typeOf, brandOf, typeKey, everyLabel, daysLeftLabel } from '../lib/learn'
 
 const CAT_COLORS = [
   { bg: C.amber, fg: C.ink },
@@ -103,7 +104,9 @@ function SectionHead({ left, right, rightColor }) {
   )
 }
 
-export default function AnalyticsPage({ header, transactions, profile, openSheet }) {
+export default function AnalyticsPage({ header, transactions, profile, openSheet, model }) {
+  const [view, setView] = useState('types')
+  const [showAll, setShowAll] = useState(false)
   const [mk, setMk] = useState(monthKey(today()))
   const months = availableMonths(transactions)
   const tx = useMemo(() => txInMonth(transactions, mk), [transactions, mk])
@@ -122,6 +125,33 @@ export default function AnalyticsPage({ header, transactions, profile, openSheet
     if (list.length > 4) list = [...list.slice(0, 3), ['Everything else', sum(list.slice(3), (e) => e[1])]]
     return list.map(([name, amount], i) => ({ name, amount, ...CAT_COLORS[i] }))
   }, [tx])
+
+  // Spend by product type and by brand for the selected month
+  const byType = useMemo(() => {
+    const m = {}
+    tx.forEach((t) => {
+      const k = typeKey(typeOf(t))
+      const e = (m[k] ||= { key: k, name: typeOf(t), amount: 0, brands: new Set() })
+      e.amount += lineTotal(t); e.brands.add(brandOf(t) || 'Unbranded')
+    })
+    return Object.values(m).sort((a, b) => b.amount - a.amount)
+  }, [tx])
+  const byBrand = useMemo(() => {
+    const m = {}
+    tx.forEach((t) => {
+      const b = brandOf(t)
+      if (!b) return
+      const e = (m[b.toLowerCase()] ||= { name: b, amount: 0, units: 0, types: {} })
+      e.amount += lineTotal(t); e.units += Number(t.qty) || 1
+      const k = typeKey(typeOf(t)); e.types[k] = (e.types[k] || 0) + lineTotal(t)
+    })
+    return Object.values(m).map((e) => ({ ...e, topType: Object.entries(e.types).sort((a, b) => b[1] - a[1])[0]?.[0] })).sort((a, b) => b.amount - a.amount)
+  }, [tx])
+  const runningOut = useMemo(() => Object.values(model || {})
+    .filter((T) => T.learned && T.items.length && T.daysLeft !== null && T.daysLeft <= 7)
+    .sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 4), [model])
+  const productRows = (view === 'types' ? byType : byBrand)
+  const shownRows = showAll ? productRows : productRows.slice(0, 6)
 
   const changes = useMemo(() => priceChanges(transactions), [transactions])
   const featured = changes[0]
@@ -209,6 +239,53 @@ export default function AnalyticsPage({ header, transactions, profile, openSheet
           </>
         ) : (
           <span style={TX.small}>No spending logged for {monthShort(mk)}.</span>
+        )}
+      </section>
+
+      {/* Butler's learning: what runs out soon */}
+      {runningOut.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '24px 20px 0' }}>
+          <SectionHead left="RUNNING OUT SOON" right="BUTLER ESTIMATE" />
+          <div style={{ background: C.teal, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {runningOut.map((T) => (
+              <button key={T.key} onClick={() => openSheet('type', { typeKey: T.key })} style={{ ...reset, display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+                <span style={{ ...sans(14, 500, { color: C.blush }), flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{T.type}</span>
+                <span style={mono(10, 500, { letterSpacing: 0.6, color: T.estimate < 0.5 ? C.amber : C.blush80, whiteSpace: 'nowrap' })}>
+                  {T.estimate < 0.5 ? 'PROBABLY OUT' : `≈${Math.round(T.estimate)} LEFT · ${daysLeftLabel(T.daysLeft).replace('about ', '~').toUpperCase()}`}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* By product type / brand */}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '24px 20px 0' }}>
+        <SectionHead left="BY PRODUCT" right={monthShort(mk).toUpperCase()} />
+        <Segmented value={view} onChange={(v) => { setView(v); setShowAll(false) }} height={40} fontSize={13}
+          options={[{ value: 'types', label: 'Product types' }, { value: 'brands', label: 'Brands' }]} />
+        {shownRows.length ? shownRows.map((r) => {
+          const T = view === 'types' ? model?.[r.key] : model?.[r.topType]
+          const sub = view === 'types'
+            ? [T?.learned ? `Uses ${everyLabel(T.rate).replace('about ', '~')}` : 'Learning your usage', `${r.brands.size} brand${r.brands.size === 1 ? '' : 's'}`].join(' · ')
+            : `${T?.type || 'Various'} · ×${r.units}`
+          return (
+            <button key={r.key || r.name} onClick={() => T && openSheet('type', { typeKey: T.key })}
+              style={{ ...reset, background: C.row, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ ...sans(14, 500, { color: C.ink }), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                <span style={{ ...mono(9, 400, { letterSpacing: 0.36, color: C.ink80 }), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub.toUpperCase()}</span>
+              </div>
+              <Money value={r.amount} size={18} tracking={-0.36} />
+            </button>
+          )
+        }) : (
+          <span style={TX.small}>{view === 'brands' ? 'No brands recorded yet — Butler picks them up from receipts and item names.' : `No spending logged for ${monthShort(mk)}.`}</span>
+        )}
+        {productRows.length > 6 && (
+          <button onClick={() => setShowAll(!showAll)} style={{ ...reset, alignSelf: 'flex-start', ...sans(13, 500, { color: C.ink, textDecoration: 'underline', textUnderlineOffset: 3 }) }}>
+            {showAll ? 'Show fewer' : `Show all ${productRows.length}`}
+          </button>
         )}
       </section>
 

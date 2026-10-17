@@ -68,10 +68,13 @@ export const STOCK = {
   medium: { label: 'Running low', meter: 'MED', bars: 2 },
   low: { label: 'Out', meter: 'OUT', bars: 0 },
 }
-// `_due` (added by annotateDue, never saved) marks items that are past their usual rebuy time.
+// Shown status = the more urgent of what's stored on the item (set by counts, purchases
+// or the status buttons) and what Butler's learning model estimates (`_auto`, never saved).
+const RANK = { high: 0, medium: 1, low: 2 }
 export const stockOf = (item) => {
   const s = STOCK[item?.status] ? item.status : 'high'
-  return s === 'high' && item?._due ? 'medium' : s
+  const a = STOCK[item?._auto] ? item._auto : 'high'
+  return RANK[a] > RANK[s] ? a : s
 }
 export const isLow = (item) => !!item && stockOf(item) !== 'high'
 
@@ -149,33 +152,15 @@ export const avgGapDays = (purchases) => {
   for (let i = 1; i < dates.length; i++) gaps.push((parseDate(dates[i]) - parseDate(dates[i - 1])) / 86400000)
   return sum(gaps) / gaps.length
 }
+const plural = (n, w) => `~${n} ${w}${n === 1 ? '' : 's'}`
 export const daysLabel = (avg) => {
-  if (avg < 10) return `~${Math.max(1, Math.round(avg))} days`
-  if (avg < 60) return `~${Math.round(avg / 7)} weeks`
-  return `~${Math.round(avg / 30)} months`
+  if (avg < 10) return plural(Math.max(1, Math.round(avg)), 'day')
+  if (avg < 60) return plural(Math.round(avg / 7), 'week')
+  return plural(Math.round(avg / 30), 'month')
 }
 export const usuallyLasts = (purchases) => {
   const avg = avgGapDays(purchases)
   return avg === null ? '—' : daysLabel(avg)
-}
-
-// Mark in-stock items that have gone longer than usual since they were last bought.
-// Dismissed with dueAck (the date someone said "still got plenty").
-export const annotateDue = (inventory, transactions) => {
-  const byItem = {}
-  transactions.forEach((t) => { const k = norm(t.item); if (k) (byItem[k] ||= []).push(t) })
-  const now = parseDate(today())
-  return inventory.map((i) => {
-    if (i.status && i.status !== 'high') return i
-    const list = byItem[norm(i.name)]
-    if (!list || list.length < 2) return i
-    const avg = avgGapDays(list)
-    if (!avg || avg < 2) return i
-    const lastDate = list.reduce((m, t) => (t.date > m ? t.date : m), '')
-    const from = i.dueAck && i.dueAck > lastDate ? i.dueAck : lastDate
-    const since = (now - parseDate(from)) / 86400000
-    return since >= avg ? { ...i, _due: { avg, since: (now - parseDate(lastDate)) / 86400000 } } : i
-  })
 }
 
 export const initials = (name) => {

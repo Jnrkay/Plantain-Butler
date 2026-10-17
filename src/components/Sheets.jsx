@@ -12,7 +12,10 @@ import {
   Checkbox, Chip, Barcode, Overlay, reset,
 } from './ui'
 import { exportBackup } from './OverflowMenu'
-import { callButler } from '../lib/ai'
+import { callButler, textOf, parseJson } from '../lib/ai'
+import { ItemSheet, EditItemSheet, TypeSheet } from './ItemSheets'
+import HouseholdSheet from './HouseholdSheet'
+import { typeOf, brandOf, findItem, KNOWN_TYPES } from '../lib/learn'
 import { supabase } from '../lib/supabase'
 
 const ICON_BOX = { width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
@@ -82,6 +85,20 @@ const compressImage = (file, maxWidth = 1400) => new Promise((resolve) => {
   img.src = URL.createObjectURL(file)
 })
 
+function BrandTypeFields({ value, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      <Field label="BRAND" style={{ flex: 1 }}><TextInput value={value.brand || ''} onChange={(v) => onChange({ ...value, brand: v })} placeholder="Optional" /></Field>
+      <Field label="TYPE" style={{ flex: 1 }}><TextInput value={value.productType || ''} onChange={(v) => onChange({ ...value, productType: v })} placeholder="e.g. Water" list="pb-types-all" /></Field>
+    </div>
+  )
+}
+const TypesList = ({ model }) => (
+  <datalist id="pb-types-all">
+    {[...new Set([...Object.values(model || {}).map((t) => t.type), ...KNOWN_TYPES])].sort().map((t) => <option key={t} value={t} />)}
+  </datalist>
+)
+
 function LineEditor({ line, onChange, onRemove }) {
   return (
     <div style={{ background: C.field, border: `1.5px solid ${C.ink90}`, padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -90,6 +107,7 @@ function LineEditor({ line, onChange, onRemove }) {
         <Field label="QTY" style={{ width: 120, flexShrink: 0 }}><QtyStepper value={Number(line.qty) || 1} onChange={(v) => onChange({ ...line, qty: v })} /></Field>
         <Field label="PRICE (GHS)" style={{ flex: 1 }}><TextInput type="number" inputMode="decimal" step="0.01" value={num(line.price)} onChange={(v) => onChange({ ...line, price: v })} placeholder="0.00" /></Field>
       </div>
+      <BrandTypeFields value={line} onChange={onChange} />
       <Field label="CATEGORY"><SelectInput value={line.category} onChange={(v) => onChange({ ...line, category: v })} options={catOptions} /></Field>
       <button onClick={onRemove} style={{ ...reset, alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 8 }}>
         <Icon name="trash@16" color={C.ember} />
@@ -99,7 +117,10 @@ function LineEditor({ line, onChange, onRemove }) {
   )
 }
 
-function ReceiptSheet({ onClose, addTransaction, profile }) {
+function ReceiptSheet({ onClose, addTransaction, profile, model, markProgress }) {
+  // Tell Butler the types this household already uses, so new receipts land in the same groups
+  const known = Object.values(model || {}).map((t) => t.type).slice(0, 60)
+  const typeHint = known.length ? ` Prefer these existing types when they fit: ${known.join(', ')}.` : ''
   const [step, setStep] = useState('upload') // upload | scanning | review
   const [store, setStore] = useState('')
   const [date, setDate] = useState(today())
@@ -119,22 +140,24 @@ function ReceiptSheet({ onClose, addTransaction, profile }) {
       const data = await compressImage(file)
       const json = await callButler({
         max_tokens: 2048,
-        system: `You are a receipt OCR assistant. Extract the purchase from the receipt image and return ONLY valid JSON (no markdown, no code fences):
-{"store":"store name or empty string","date":"YYYY-MM-DD or empty string","items":[{"item":"item name","qty":1,"price":0.00,"category":"Category"}]}
-"price" is the unit price. Valid categories: ${CATEGORIES.join(', ')}. If unsure, use "Other".`,
+        system: `You are a receipt OCR assistant for shops in Ghana. Extract the purchase from the receipt image and return ONLY valid JSON (no markdown, no code fences):
+{"store":"store name or empty string","date":"YYYY-MM-DD or empty string","items":[{"item":"readable item name","brand":"brand or empty string","type":"generic product type","qty":1,"price":0.00,"category":"Category"}]}
+"price" is the unit price. Expand cryptic receipt abbreviations into a readable name. "type" is the generic thing any brand could replace, short and Title Case (e.g. "Water", "Paper towels", "Rice", "Cooking oil", "Tomato paste") — no sizes or flavours.${typeHint}
+Valid categories: ${CATEGORIES.join(', ')}. If unsure, use "Other".`,
         messages: [{ role: 'user', content: [
           { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } },
           { type: 'text', text: 'Extract all items from this receipt.' },
         ] }],
       })
-      const text = (json.content?.[0]?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
-      const parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
+      const parsed = parseJson(textOf(json), '{', '}')
       setStore(parsed.store || profile?.stores?.[0] || '')
       setDate(/^\d{4}-\d{2}-\d{2}$/.test(parsed.date || '') ? parsed.date : today())
       setLines((parsed.items || []).map((it) => ({
         id: uid(), item: it.item || '', qty: Number(it.qty) || 1, price: Number(it.price) || 0,
         category: CATEGORIES.includes(it.category) ? it.category : 'Other',
+        brand: it.brand || '', productType: it.type || '',
       })))
+      markProgress?.('scanned')
       setStep('review')
     } catch (err) {
       setError(err.message?.includes('JSON') ? "Couldn't read that receipt. Try a flatter, brighter photo." : err.message || 'Scan failed')
@@ -195,6 +218,7 @@ function ReceiptSheet({ onClose, addTransaction, profile }) {
   return (
     <Sheet onClose={onClose} gap={12} label="Review receipt">
       <SheetHeader title="Review receipt" onClose={onClose} />
+      <TypesList model={model} />
       <Steps step={1} />
       <div style={{ background: C.teal, padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
         <Icon name="check@16" color={C.amber} />
@@ -225,7 +249,7 @@ function ReceiptSheet({ onClose, addTransaction, profile }) {
           <button key={l.id} onClick={() => setEditing(l.id)} style={{ ...reset, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: C.row, width: '100%' }}>
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span style={{ ...sans(14, 500, { color: l.item ? C.ink : C.ember }), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.item || 'Unnamed item'}</span>
-              <span style={TX.label}>{String(l.category || 'Other').toUpperCase()}</span>
+              <span style={TX.label}>{[l.productType, l.brand].filter(Boolean).join(' · ').toUpperCase() || String(l.category || 'Other').toUpperCase()}</span>
             </div>
             <span style={{ ...mono(12, 400, { color: C.ink }), width: 28, textAlign: 'center' }}>×{Number(l.qty) || 1}</span>
             <span style={{ ...sans(17, 300, { color: C.ink }), width: 70, textAlign: 'right' }}>{money((Number(l.price) || 0) * (Number(l.qty) || 1))}</span>
@@ -253,8 +277,8 @@ function ReceiptSheet({ onClose, addTransaction, profile }) {
 }
 
 /* ================= M4 · Add items manually (23:7342) ================= */
-function ManualAddSheet({ onClose, addTransaction, profile, inventory }) {
-  const blank = () => ({ id: uid(), item: '', qty: 1, price: '', category: 'Other' })
+function ManualAddSheet({ onClose, addTransaction, profile, inventory, model }) {
+  const blank = () => ({ id: uid(), item: '', qty: 1, price: '', category: 'Other', brand: '', productType: '' })
   const [store, setStore] = useState(profile?.stores?.[0] || '')
   const [date, setDate] = useState(today())
   const [rows, setRows] = useState([blank()])
@@ -266,7 +290,12 @@ function ManualAddSheet({ onClose, addTransaction, profile, inventory }) {
     // Prefill category & price from inventory when the name matches something we track
     if (patch.item !== undefined) {
       const known = inventory.find((i) => i.name.toLowerCase() === String(patch.item).toLowerCase().trim())
-      if (known) { next.category = known.category || next.category; if (next.price === '') next.price = known.lastPrice ?? '' }
+      if (known) {
+        next.category = known.category || next.category
+        if (next.price === '') next.price = known.lastPrice ?? ''
+        if (!next.brand) next.brand = known.brand || known._brand || ''
+        if (!next.productType) next.productType = known.productType || typeOf(known)
+      }
     }
     return next
   }))
@@ -287,6 +316,7 @@ function ManualAddSheet({ onClose, addTransaction, profile, inventory }) {
       </div>
 
       <datalist id="pb-inv-names">{inventory.map((i) => <option key={i.id} value={i.name} />)}</datalist>
+      <TypesList model={model} />
       {rows.map((r, i) => r.id === active ? (
         <div key={r.id} style={{ background: C.row, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -304,6 +334,7 @@ function ManualAddSheet({ onClose, addTransaction, profile, inventory }) {
               <TextInput type="number" inputMode="decimal" step="0.01" value={num(r.price)} onChange={(v) => update(r.id, { price: v })} placeholder="0.00" />
             </Field>
           </div>
+          <BrandTypeFields value={r} onChange={(v) => update(r.id, { brand: v.brand, productType: v.productType })} />
           <Field label="CATEGORY"><SelectInput value={r.category} onChange={(v) => update(r.id, { category: v })} options={catOptions} /></Field>
         </div>
       ) : (
@@ -326,128 +357,6 @@ function ManualAddSheet({ onClose, addTransaction, profile, inventory }) {
         <Button icon="check@16" onClick={save} disabled={!valid.length} style={{ flex: 1, minWidth: 0 }}>
           Save {valid.length} {valid.length === 1 ? 'item' : 'items'} · GHS {money(total)}
         </Button>
-      </div>
-    </Sheet>
-  )
-}
-
-/* ================= M5 · Item detail (23:7574) ================= */
-function ItemSheet({ onClose, itemId, inventory, saveInv, transactions, addToShoppingList, shoppingList, openSheet }) {
-  const item = inventory.find((i) => i.id === itemId)
-  if (!item) return null
-  const status = stockOf(item)
-  const purchases = purchasesOf(transactions, item.name)
-  const first = purchases[0], last = purchases[purchases.length - 1]
-  const pct = first && last && Number(first.price) ? ((Number(last.price) - Number(first.price)) / Number(first.price)) * 100 : 0
-  const trend = purchases.length < 2 ? '—'
-    : Math.abs(pct) < 0.05 ? 'No change' : `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}% since ${MONTHS[parseDate(first.date).getMonth()]}`
-  const onList = shoppingList.some((s) => !s.checked && String(s.name).toLowerCase().trim() === item.name.toLowerCase().trim())
-
-  const patch = (p) => saveInv(inventory.map((i) => (i.id === item.id ? { ...i, ...p } : i)))
-  // Changing the count sets the status automatically; the status buttons below still override it.
-  const setQty = (q) => saveInv(inventory.map((i) => (i.id === item.id ? withQty(i, q) : i)))
-  const setStatus = (v) => patch(v === 'high' && item._due ? { status: v, dueAck: today() } : { status: v })
-  const due = item._due
-  const icon = categoryIcon(item.category)
-
-  const rows = [
-    ['Last price', item.lastPrice ? `GHS ${money(item.lastPrice)}` : '—'],
-    ['Price trend', trend, pct > 0.05 ? C.ember : C.ink],
-    ['Last bought', item.lastPurchased ? shortDate(item.lastPurchased) : '—'],
-    ['Usually lasts', usuallyLasts(purchases)],
-  ]
-
-  return (
-    <Sheet onClose={onClose} label={item.name}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 52, height: 52, background: C.amber, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          {icon === 'cup' ? <Icon name="cup@24" /> : <Icon name={`${icon}@18`} style={{ transform: 'scale(1.333)' }} />}
-        </div>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ ...sans(20, 500, { letterSpacing: -0.4, color: C.ink }), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
-          <span style={{ ...TX.label, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {(item.category || 'Other').toUpperCase()}{item.store ? ` · ${item.store.toUpperCase()}` : ''}
-          </span>
-        </div>
-        <button aria-label="Close" onClick={onClose} style={{ ...reset, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.ink25}`, flexShrink: 0 }}>
-          <Icon name="x@16" />
-        </button>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0', borderTop: `1px solid ${C.ink15}`, borderBottom: `1px solid ${C.ink15}` }}>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={TX.label}>IN STOCK</span>
-          <span style={sans(64, 300, { lineHeight: '68px', letterSpacing: -3.2, color: C.ink })}>{pad2(item.qty)}</span>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button aria-label="Decrease" onClick={() => setQty((Number(item.qty) || 0) - 1)}
-            style={{ ...reset, width: 52, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.ink30}` }}>
-            <Icon name="minus@18" />
-          </button>
-          <button aria-label="Increase" onClick={() => setQty((Number(item.qty) || 0) + 1)}
-            style={{ ...reset, width: 52, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.ink }}>
-            <Icon name="plus@18" color={C.amber} />
-          </button>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <span style={TX.label}>STOCK STATUS</span>
-        <Segmented value={status} onChange={setStatus}
-          options={[{ value: 'high', label: 'In stock' }, { value: 'medium', label: 'Running low' }, { value: 'low', label: 'Out' }]} />
-      </div>
-
-      {due && (
-        <div style={{ background: C.blush, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={sans(13, 400, { color: C.ink, lineHeight: '18px' })}>
-            <b style={{ fontWeight: 500 }}>Probably running low.</b> You usually buy this every {daysLabel(due.avg)} and it’s been {daysLabel(due.since).replace('~', '')}.
-          </span>
-          <button onClick={() => patch({ dueAck: today() })} style={{ ...reset, alignSelf: 'flex-start', ...sans(13, 500, { color: C.ink, textDecoration: 'underline' }) }}>
-            Still got plenty
-          </button>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {rows.map(([k, v, color], i) => (
-          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: i < rows.length - 1 ? `1px solid ${C.ink10}` : 'none' }}>
-            <span style={sans(14, 400, { color: C.ink80 })}>{k}</span>
-            <span style={sans(14, 500, { color: color || C.ink })}>{v}</span>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <Button icon="cart@16" disabled={onList} onClick={() => { addToShoppingList([{ name: item.name, qty: 1 }]); onClose() }}>
-          {onList ? 'Already on your list' : 'Add to shopping list'}
-        </Button>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button variant="outline" icon="pencil@16" style={{ flex: 1 }} onClick={() => openSheet('editItem', { itemId: item.id })}>Edit item</Button>
-          <Button variant="danger" icon="trash@16" style={{ flex: 1 }} onClick={() => { saveInv(inventory.filter((i) => i.id !== item.id)); onClose() }}>Delete</Button>
-        </div>
-      </div>
-    </Sheet>
-  )
-}
-
-function EditItemSheet({ onClose, itemId, inventory, saveInv, openSheet }) {
-  const item = inventory.find((i) => i.id === itemId)
-  const [d, setD] = useState({ name: item?.name || '', category: item?.category || 'Other', lastPrice: num(item?.lastPrice) })
-  if (!item) return null
-  const save = () => {
-    if (!d.name.trim()) return
-    saveInv(inventory.map((i) => (i.id === item.id ? { ...i, name: d.name.trim(), category: d.category, lastPrice: Number(d.lastPrice) || 0 } : i)))
-    openSheet('item', { itemId: item.id })
-  }
-  return (
-    <Sheet onClose={onClose} label="Edit item">
-      <SheetHeader title="Edit item" subtitle={item.name} onClose={onClose} />
-      <Field label="NAME"><TextInput value={d.name} onChange={(v) => setD({ ...d, name: v })} /></Field>
-      <Field label="CATEGORY"><SelectInput value={d.category} onChange={(v) => setD({ ...d, category: v })} options={catOptions} /></Field>
-      <Field label="LAST PRICE (GHS)"><TextInput type="number" inputMode="decimal" step="0.01" value={d.lastPrice} onChange={(v) => setD({ ...d, lastPrice: v })} placeholder="0.00" /></Field>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <Button variant="outline" onClick={() => openSheet('item', { itemId: item.id })} style={{ width: 112, flexShrink: 0 }}>Cancel</Button>
-        <Button icon="check@16" onClick={save} disabled={!d.name.trim()} style={{ flex: 1 }}>Save changes</Button>
       </div>
     </Sheet>
   )
@@ -689,6 +598,8 @@ export default function Sheets({ sheet, onClose, ...rest }) {
     case 'manual': return <ManualAddSheet {...props} />
     case 'item': return <ItemSheet key={sheet.itemId} {...props} />
     case 'editItem': return <EditItemSheet key={`e${sheet.itemId}`} {...props} />
+    case 'type': return <TypeSheet key={`t${sheet.typeKey}`} {...props} />
+    case 'household': return <HouseholdSheet {...props} />
     case 'shopItem': return <ShopItemSheet key={sheet.itemId || 'new'} {...props} />
     case 'profile': return <ProfileSheet {...props} />
     case 'budgets': return <BudgetsSheet {...props} />

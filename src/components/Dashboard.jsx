@@ -22,7 +22,46 @@ const heroSize = (s) => {
   return len <= 6.4 ? 72 : Math.max(44, Math.floor((72 * 6.4) / len))
 }
 
-export default function Dashboard({ header, profile, inventory, monthTx, totalSpend, lowStock, shoppingList, openSheet, setPage }) {
+const STEPS = [
+  { key: 'stock', label: 'Add what’s at home', done: (d) => d.inventory.length >= 3 || d.progress.stock, go: (a) => a.openSheet('manual') },
+  { key: 'logged', label: 'Log a purchase', done: (d) => d.transactions.length > 0, go: (a) => a.openSheet('quickAdd') },
+  { key: 'scanned', label: 'Scan a receipt', done: (d) => d.progress.scanned, go: (a) => a.openSheet('receipt') },
+  { key: 'askedButler', label: 'Ask Butler something', done: (d) => d.progress.askedButler, go: (a) => a.setPage('assistant') },
+  { key: 'invited', label: 'Invite your household', done: (d) => d.progress.invited, go: (a) => a.openSheet('household') },
+]
+
+function GettingStarted({ profile, inventory, transactions, openSheet, setPage, saveProfile }) {
+  const progress = profile?.progress || {}
+  if (progress.hideChecklist) return null
+  const d = { inventory, transactions, progress }
+  const done = STEPS.filter((s) => s.done(d)).length
+  if (done === STEPS.length) return null
+  return (
+    <section style={{ padding: '0 20px 16px' }}>
+      <div style={{ background: C.row, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={TX.label}>GETTING STARTED · {done}/{STEPS.length}</span>
+          <button onClick={() => saveProfile({ ...profile, progress: { ...progress, hideChecklist: true } })} style={{ ...reset, ...mono(10, 400, { letterSpacing: 0.8, color: C.ink80 }) }}>HIDE</button>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>{STEPS.map((s) => <div key={s.key} style={{ flex: 1, height: 3, background: s.done(d) ? C.ink : C.ink15 }} />)}</div>
+        {STEPS.map((s) => {
+          const ok = s.done(d)
+          return (
+            <button key={s.key} disabled={ok} onClick={() => s.go({ openSheet, setPage })} style={{ ...reset, display: 'flex', alignItems: 'center', gap: 12, width: '100%', cursor: ok ? 'default' : 'pointer' }}>
+              <span style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: ok ? C.ink : 'transparent', border: ok ? 'none' : `1.5px solid ${C.ink45}`, flexShrink: 0 }}>
+                {ok && <Icon name="check@12" color={C.amber} />}
+              </span>
+              <span style={{ ...sans(14, ok ? 400 : 500, { color: ok ? C.ink55 : C.ink, textDecoration: ok ? 'line-through' : 'none' }), flex: 1 }}>{s.label}</span>
+              {!ok && <Icon name="arrow@18" />}
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+export default function Dashboard({ header, profile, inventory, transactions, monthTx, totalSpend, lowStock, shoppingList, openSheet, setPage, saveProfile }) {
   const month = MONTHS_LONG[new Date().getMonth()].toUpperCase()
   const budget = monthlyBudget(profile)
   const left = budget - totalSpend
@@ -72,6 +111,8 @@ export default function Dashboard({ header, profile, inventory, monthTx, totalSp
         </div>
         <Barcode bars={88} fraction={budget > 0 ? totalSpend / budget : 0} on={left < 0 ? C.ember : C.ink} />
       </section>
+
+      <GettingStarted profile={profile} inventory={inventory} transactions={transactions} openSheet={openSheet} setPage={setPage} saveProfile={saveProfile} />
 
       {/* CTA stack 23:5678 */}
       <section style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 387 }}>

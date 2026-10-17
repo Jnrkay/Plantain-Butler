@@ -2,11 +2,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { C, TX, sans, mono } from '../lib/theme'
 import { today, monthKey } from '../lib/utils'
-import { lineTotal, sum, money, monthlyBudget, greeting, isLow, txInMonth, shiftMonth, stockOf, STOCK } from '../lib/derive'
+import { lineTotal, sum, money, monthlyBudget, greeting, txInMonth } from '../lib/derive'
 import { Header, Barcode, Icon, reset } from './ui'
-import { callButler } from '../lib/ai'
+import { callButler, textOf } from '../lib/ai'
+import { systemPrompt, TOOLS, runTool } from '../lib/butler'
+import { typeOf, typeKey, daysLeftLabel } from '../lib/learn'
 
-const CHIPS = ['This month vs last', 'Optimise budget']
+const CHIPS = ['What can you do?', 'What’s running low?', 'This month vs last', 'How do I share with my family?']
 const STORE_KEY = 'pb-butler-chat'
 
 // Minimal formatting for model replies: paragraphs, line breaks, **bold**
@@ -53,25 +55,29 @@ function Typing() {
   )
 }
 
-export default function AssistantPage({ header, transactions, inventory, profile, shoppingList, addToShoppingList }) {
-  const [messages, setMessages] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem(STORE_KEY)) || [] } catch { return [] }
-  })
+export default function AssistantPage(props) {
+  const { header, transactions, inventory, profile, shoppingList, addToShoppingList, lowStock, account, model, markProgress } = props
+  const saved = (() => { try { const v = JSON.parse(sessionStorage.getItem(STORE_KEY)); return v?.v === 2 ? v : null } catch { return null } })()
+  const [feed, setFeed] = useState(saved?.feed || []) // what's shown: user / butler / action / error
+  const [api, setApi] = useState(saved?.api || [])    // what Butler sees, incl. tool calls
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [suggestion, setSuggestion] = useState('open') // open | added | dismissed
   const [listening, setListening] = useState(false)
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
+  const latest = useRef(props)
+  latest.current = props
+  const undos = useRef({})
 
-  useEffect(() => { try { sessionStorage.setItem(STORE_KEY, JSON.stringify(messages.slice(-40))) } catch { /* ignore */ } }, [messages])
-  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [messages, loading, suggestion])
+  useEffect(() => { try { sessionStorage.setItem(STORE_KEY, JSON.stringify({ v: 2, feed: feed.slice(-60), api: api.slice(-40) })) } catch { /* ignore */ } }, [feed, api])
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [feed, loading, suggestion])
 
   const mk = monthKey(today())
   const monthTx = txInMonth(transactions, mk)
   const spent = sum(monthTx, lineTotal)
   const budget = monthlyBudget(profile)
-  const firstName = String(profile?.name || '').trim().split(/\s+/)[0]
+  const firstName = String(account?.name || profile?.name || '').trim().split(/\s+/)[0]
 
   const cats = useMemo(() => {
     const m = {}
@@ -80,54 +86,88 @@ export default function AssistantPage({ header, transactions, inventory, profile
   }, [monthTx])
   const [top1, top2] = cats
 
-  const introText = `${greeting()}${firstName ? `, ${firstName}` : ''}. You've spent GHS ${money(spent)} this month${budget ? ` — ${((spent / budget) * 100).toFixed(1)}% of budget` : ''}.${top1 ? ` ${top1[0]} lead${top1[0].endsWith('s') ? '' : 's'}.` : ' Nothing logged yet.'}`
+  const introText = `${greeting()}${firstName ? `, ${firstName}` : ''}. You've spent GHS ${money(spent)} this month${budget ? ` — ${((spent / budget) * 100).toFixed(1)}% of budget` : ''}.${top1 ? ` ${top1[0]} lead${top1[0].endsWith('s') ? '' : 's'}.` : ' Nothing logged yet.'} Ask me anything, or tell me what to add.`
 
-  const onList = new Set(shoppingList.map((s) => String(s.name).toLowerCase().trim()))
-  const lowItem = inventory.find((i) => isLow(i) && !onList.has(i.name.toLowerCase().trim()))
-  const suggestionText = lowItem && (stockOf(lowItem) === 'low'
-    ? `${lowItem.name} has run out — want me to add it to your list?`
-    : `${inventory.some((i) => stockOf(i) === 'low') ? '' : 'Nothing critical yet. '}${lowItem.name} is down to medium — want me to add it to your list?`)
+  // Proactive nudge from the learning model: the most urgent type that isn't on the list yet
+  const listTypes = new Set(shoppingList.filter((s) => !s.checked).map((s) => typeKey(typeOf({ name: s.name, productType: s.productType }))))
+  const lowItem = (lowStock || []).filter((i) => !listTypes.has(typeKey(typeOf(i))))
+    .sort((a, b) => (a._model?.daysLeft ?? 99) - (b._model?.daysLeft ?? 99))[0]
+  const T = lowItem?._model
+  const suggestionText = lowItem && (T?.learned
+    ? (T.estimate < 0.5 ? `I think you’re out of ${T.type.toLowerCase()} by now.` : `${T.type} will likely run out in ${daysLeftLabel(T.daysLeft)} (≈${Math.round(T.estimate)} left).`) + ` Add ${lowItem.name} to your list?`
+    : `${lowItem.name} is running low — want me to add it to your list?`)
 
-  const buildContext = () => {
-    const prevMk = shiftMonth(mk, -1)
-    const prevSpent = sum(txInMonth(transactions, prevMk), lineTotal)
-    const inv = inventory.slice(0, 40).map((i) => `${i.name}: qty ${i.qty} (${STOCK[stockOf(i)].label})${i.lastPrice ? `, last GHS ${money(i.lastPrice)}` : ''}`).join('\n')
-    const recent = [...transactions].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30)
-      .map((t) => `${t.date} | ${t.item} | GHS ${money(t.price)} x${t.qty} | ${t.category} | ${t.store || '-'}`).join('\n')
-    return `You are Plantain Butler, a warm, practical household finance assistant for a home in Ghana. Currency is Ghana cedis — write amounts as "GHS 12.50". Today is ${today()}.
+  const push = (item) => setFeed((f) => [...f, { id: Math.random().toString(36).slice(2), ...item }])
 
-Household: ${profile?.name || 'User'}; ${profile?.householdType || 'household'} (${profile?.adults || 1} adults, ${profile?.kids || 0} kids). Monthly budget: ${budget ? `GHS ${money(budget)}` : 'not set'}. Shops: ${(profile?.stores || []).join(', ') || 'unknown'}. Diet: ${profile?.dietaryPrefs || 'none given'}.
+  const snapshot = () => {
+    const p = latest.current
+    const strip = (list) => list.map((i) => Object.fromEntries(Object.entries(i).filter(([k]) => !k.startsWith('_'))))
+    return { inventory: strip(p.inventory), transactions: p.transactions, shoppingList: p.shoppingList, profile: p.profile, learning: p.learning }
+  }
+  const undo = (undoId) => {
+    const snap = undos.current[undoId]
+    if (!snap) return
+    const p = latest.current
+    p.saveInv(snap.inventory); p.saveTx(snap.transactions); p.saveSL(snap.shoppingList); p.saveProfile(snap.profile); p.saveLearning?.(snap.learning)
+    delete undos.current[undoId]
+    setFeed((f) => f.map((x) => (x.undoId === undoId ? { ...x, undone: true } : x)))
+    setApi((m) => [...m, { role: 'user', content: '(I tapped Undo — your last changes were reverted.)' }, { role: 'assistant', content: 'Okay, I’ve put things back as they were.' }])
+  }
 
-This month: GHS ${money(spent)} across ${monthTx.length} purchases. Last month: GHS ${money(prevSpent)}.
-Category totals this month: ${cats.map(([c, v]) => `${c} GHS ${money(v)}`).join(', ') || 'none'}.
-
-Inventory:
-${inv || 'none'}
-
-Shopping list: ${shoppingList.map((s) => `${s.name}${s.checked ? ' (in cart)' : ''}`).join(', ') || 'empty'}
-
-Recent purchases:
-${recent || 'none'}
-
-Answer in 2–5 short sentences or a short list. No markdown headings.`
+  // Keep history valid for the API: start on a plain user message, don't split tool call/result pairs
+  const trimmed = (msgs) => {
+    let start = Math.max(0, msgs.length - 24)
+    while (start < msgs.length && !(msgs[start].role === 'user' && typeof msgs[start].content === 'string')) start++
+    return msgs.slice(start)
   }
 
   const send = async (text) => {
-    const trimmed = text.trim()
-    if (!trimmed || loading) return
-    const next = [...messages, { role: 'user', content: trimmed }]
-    setMessages(next)
+    const trimmedText = text.trim()
+    if (!trimmedText || loading) return
+    markProgress?.('askedButler')
+    push({ kind: 'user', text: trimmedText })
     setInput('')
     setLoading(true)
+    let msgs = [...api, { role: 'user', content: trimmedText }]
+    const undoId = Math.random().toString(36).slice(2)
+    let changed = false
     try {
-      const data = await callButler({ max_tokens: 1000, system: buildContext(), messages: next.slice(-20) })
-      setMessages((m) => [...m, { role: 'assistant', content: data.content?.[0]?.text || 'Sorry, I could not work that out.' }])
+      for (let round = 0; round < 5; round++) {
+        const p = latest.current
+        const data = await callButler({
+          max_tokens: 1200, tools: TOOLS,
+          system: systemPrompt({ profile: p.profile, transactions: p.transactions, inventory: p.inventory, shoppingList: p.shoppingList, model: p.model, name: p.account?.name }),
+          messages: trimmed(msgs),
+        })
+        const blocks = (data.content || []).filter((b) => b.type === 'text' || b.type === 'tool_use')
+        msgs = [...msgs, { role: 'assistant', content: blocks.length ? blocks : [{ type: 'text', text: '…' }] }]
+        const said = textOf(data)
+        if (said) push({ kind: 'butler', text: said })
+        const uses = blocks.filter((b) => b.type === 'tool_use')
+        if (!uses.length) break
+        const results = []
+        for (const u of uses) {
+          if (!changed && !['find_purchases', 'open_screen'].includes(u.name)) { undos.current[undoId] = snapshot(); changed = true }
+          let r
+          try { r = await runTool(u.name, u.input || {}, () => latest.current) } catch (e) { r = { result: `Failed: ${e.message}` } }
+          if (r.mutated) await new Promise((res) => setTimeout(res, 80)) // let the app apply the change before the next step
+          if (r.summary) push({ kind: 'action', text: r.summary, undoId })
+          results.push({ type: 'tool_result', tool_use_id: u.id, content: r.result || 'Done.' })
+        }
+        msgs = [...msgs, { role: 'user', content: results }]
+        if (round === 4) push({ kind: 'butler', text: 'Done — tell me if you need anything else.' })
+      }
     } catch (e) {
-      setMessages((m) => [...m, { role: 'assistant', content: e?.message || 'Something went wrong reaching Butler. Please try again.' }])
+      push({ kind: 'error', text: e?.message || 'Something went wrong reaching Butler. Please try again.' })
+      // Drop the unanswered tail so the next message starts clean
+      while (msgs.length && msgs[msgs.length - 1].role === 'user') msgs = msgs.slice(0, -1)
     } finally {
+      setApi(msgs)
       setLoading(false)
     }
   }
+
+  const clearChat = () => { setFeed([]); setApi([]); undos.current = {} }
 
   const listen = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -188,9 +228,22 @@ Answer in 2–5 short sentences or a short list. No markdown headings.`
           </ButlerBubble>
         )}
 
-        {messages.map((m, i) => m.role === 'user'
-          ? <UserBubble key={i} text={m.content} />
-          : <ButlerBubble key={i}><RichText text={m.content} color={C.blush} /></ButlerBubble>)}
+        {feed.map((m) => {
+          if (m.kind === 'user') return <UserBubble key={m.id} text={m.text} />
+          if (m.kind === 'action') return (
+            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: m.undone ? C.row : C.amber, padding: '10px 12px', width: 'min(300px, 100%)', flexShrink: 0 }}>
+              <Icon name={m.undone ? 'refresh@16' : 'check@16'} />
+              <span style={{ ...sans(13, 500, { color: C.ink, lineHeight: '18px', textDecoration: m.undone ? 'line-through' : 'none' }), flex: 1, minWidth: 0 }}>{m.text}</span>
+              {!m.undone && undos.current[m.undoId] && feed.filter((x) => x.undoId === m.undoId).pop()?.id === m.id && (
+                <button onClick={() => undo(m.undoId)} style={{ ...reset, ...sans(13, 500, { color: C.ink, textDecoration: 'underline', textUnderlineOffset: 3 }), flexShrink: 0 }}>Undo</button>
+              )}
+            </div>
+          )
+          return <ButlerBubble key={m.id}><RichText text={m.text} color={m.kind === 'error' ? C.amber : C.blush} /></ButlerBubble>
+        })}
+        {feed.length > 6 && !loading && (
+          <button onClick={clearChat} style={{ ...reset, alignSelf: 'center', ...sans(12, 400, { color: C.ink70, textDecoration: 'underline', textUnderlineOffset: 3 }), flexShrink: 0 }}>Clear chat</button>
+        )}
         {loading && <Typing />}
       </div>
 
