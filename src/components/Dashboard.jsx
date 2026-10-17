@@ -51,32 +51,59 @@ const STEPS = [
   { key: 'invited', label: 'Invite your household', done: (d) => d.progress.invited, go: (a) => a.openSheet('household') },
 ]
 
+const COLLAPSE_KEY = 'pb-checklist-collapsed'
+
 function GettingStarted({ profile, inventory, transactions, openSheet, setPage, saveProfile }) {
+  // Open or folded is remembered on this phone
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(COLLAPSE_KEY) === '1' } catch { return false } })
+  const toggle = () => setCollapsed((c) => { try { localStorage.setItem(COLLAPSE_KEY, c ? '0' : '1') } catch { /* ignore */ } return !c })
   const progress = profile?.progress || {}
   if (progress.hideChecklist) return null
   const d = { inventory, transactions, progress }
   const done = STEPS.filter((s) => s.done(d)).length
   if (done === STEPS.length) return null
+  const next = STEPS.find((s) => !s.done(d))
   return (
     <section style={{ padding: '0 20px 16px' }}>
       <div style={{ background: C.row, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={TX.label}>GETTING STARTED · {done}/{STEPS.length}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={toggle} aria-expanded={!collapsed} aria-label={collapsed ? 'Show getting started steps' : 'Fold getting started steps'}
+            style={{ ...reset, flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={TX.label}>GETTING STARTED · {done}/{STEPS.length}</span>
+            <span style={{ display: 'flex', transition: 'transform .25s var(--ease-out)', transform: collapsed ? 'rotate(-90deg)' : 'none' }}><Icon name="chev@14" /></span>
+          </button>
           <button onClick={() => saveProfile({ ...profile, progress: { ...progress, hideChecklist: true } })} style={{ ...reset, ...mono(10, 400, { letterSpacing: 0.8, color: C.ink80 }) }}>HIDE</button>
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>{STEPS.map((s) => <div key={s.key} style={{ flex: 1, height: 3, background: s.done(d) ? C.ink : C.ink15 }} />)}</div>
-        {STEPS.map((s) => {
-          const ok = s.done(d)
-          return (
-            <button key={s.key} disabled={ok} onClick={() => s.go({ openSheet, setPage })} style={{ ...reset, display: 'flex', alignItems: 'center', gap: 12, width: '100%', cursor: ok ? 'default' : 'pointer' }}>
-              <span style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: ok ? C.ink : 'transparent', border: ok ? 'none' : `1.5px solid ${C.ink45}`, flexShrink: 0 }}>
-                {ok && <Icon name="check@12" color={C.amber} />}
-              </span>
-              <span style={{ ...sans(14, ok ? 400 : 500, { color: ok ? C.ink55 : C.ink, textDecoration: ok ? 'line-through' : 'none' }), flex: 1 }}>{s.label}</span>
-              {!ok && <Icon name="arrow@18" />}
-            </button>
-          )
-        })}
+        <button onClick={toggle} tabIndex={-1} aria-hidden style={{ ...reset, display: 'flex', gap: 4, width: '100%' }}>
+          {STEPS.map((s) => <div key={s.key} style={{ flex: 1, height: 3, background: s.done(d) ? C.ink : C.ink15, transition: 'background-color .3s ease' }} />)}
+        </button>
+        {/* Folding uses a grid row that animates between 0 and its natural height */}
+        <div style={{ display: 'grid', gridTemplateRows: collapsed ? '0fr' : '1fr', transition: 'grid-template-rows .3s var(--ease-out)', marginTop: collapsed ? -12 : 0 }}>
+          <div style={{ overflow: 'hidden', minHeight: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, opacity: collapsed ? 0 : 1, transition: 'opacity .2s ease' }}>
+              {STEPS.map((s) => {
+                const ok = s.done(d)
+                return (
+                  <button key={s.key} disabled={ok} tabIndex={collapsed ? -1 : 0} onClick={() => s.go({ openSheet, setPage })} style={{ ...reset, display: 'flex', alignItems: 'center', gap: 12, width: '100%', cursor: ok ? 'default' : 'pointer' }}>
+                    <span style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: ok ? C.ink : 'transparent', border: ok ? 'none' : `1.5px solid ${C.ink45}`, flexShrink: 0 }}>
+                      {ok && <Icon name="check@12" color={C.amber} />}
+                    </span>
+                    <span style={{ ...sans(14, ok ? 400 : 500, { color: ok ? C.ink55 : C.ink, textDecoration: ok ? 'line-through' : 'none' }), flex: 1 }}>{s.label}</span>
+                    {!ok && <Icon name="arrow@18" />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        {/* Folded: just the next step, one tap away */}
+        {collapsed && next && (
+          <button onClick={() => next.go({ openSheet, setPage })} className="pb-msg" style={{ ...reset, display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            <span style={mono(10, 400, { letterSpacing: 0.8, color: C.ink80 })}>NEXT</span>
+            <span style={{ ...sans(14, 500, { color: C.ink }), flex: 1 }}>{next.label}</span>
+            <Icon name="arrow@18" />
+          </button>
+        )}
       </div>
     </section>
   )
