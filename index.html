@@ -33,6 +33,10 @@
     </style>
   </head>
   <body>
+    <!-- Fixed cream strip behind the iPhone status bar. iOS tints the status bar from what's
+         pinned at the top edge; without this it can stay grey after a sheet's dim layer closes. -->
+    <div class="pb-statusbar" aria-hidden="true"></div>
+    <div class="pb-topfade" aria-hidden="true"></div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
     <script>

@@ -228,7 +228,7 @@ export const everyLabel = (rate) => {
 export const daysLeftLabel = (d) => {
   if (d === null || d === undefined) return ''
   if (d < 1) return 'today'
-  if (d < 2) return 'about a day'
+  if (d < 2) return 'about 1 day'
   const n = (v, w) => `about ${v} ${w}${v === 1 ? '' : 's'}`
   if (d < 14) return n(Math.round(d), 'day')
   if (d < 60) return n(Math.round(d / 7), 'week')
