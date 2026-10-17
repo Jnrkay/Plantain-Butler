@@ -306,7 +306,6 @@ export function QtyStepper({ value, onChange, min = 1 }) {
 // straight to another (item → edit) swaps the content in place instead of re-sliding.
 const SheetCtx = createContext(null)
 let lastSheetUnmount = 0
-let dimCount = 0
 
 // While a sheet is open the page behind it is pinned in place (not just unscrollable).
 // iOS then has nothing to scroll when the keyboard opens, so the sheet can't be pushed
@@ -346,13 +345,6 @@ export function Sheet({ onClose, children, gap = 16, label }) {
     return () => { window.removeEventListener('keydown', onKey); unlockPage() }
   }, [close])
   useEffect(() => () => { lastSheetUnmount = Date.now() }, [])
-  // The strip behind the iPhone status bar dims with the page, and lightens as the sheet closes
-  useEffect(() => {
-    if (closing) return
-    dimCount++
-    document.documentElement.classList.add('pb-dim')
-    return () => { if (--dimCount <= 0) { dimCount = 0; document.documentElement.classList.remove('pb-dim') } }
-  }, [closing])
 
   // Drag the top of the sheet down to dismiss it
   const onPointerDown = (e) => {
@@ -382,12 +374,16 @@ export function Sheet({ onClose, children, gap = 16, label }) {
       {/* Covers everything down to the top of the keyboard. When iOS slides the app up for the
           keyboard, the dim layer still reaches the top and the sheet sits right on the keyboard. */}
       <div role="dialog" aria-modal="true" aria-label={label} style={{ position: 'fixed', left: 0, right: 0, top: 0, height: 'calc(var(--vvt, 0px) + var(--vvh, 100dvh))', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-        <div onClick={close} style={{ position: 'absolute', inset: 0, background: C.scrim, animation: closing ? 'pb-fade-out .18s ease both' : swap ? 'none' : 'pb-fade-in .22s ease' }} />
+        {/* No dim behind sheets: on iPhone the strip behind the clock can't be dimmed, so a dim
+            layer always left a visible bar at the top. The sheet floats on a soft shadow instead;
+            tapping anywhere outside it still closes it. */}
+        <div onClick={close} style={{ position: 'absolute', inset: 0, background: 'transparent' }} />
         <div
           ref={panel}
           style={{
             position: 'relative', width: '100%', maxWidth: 480, maxHeight: 'calc(var(--vvh, 100dvh) - max(16px, env(safe-area-inset-top, 0px)) - 16px)', overflowY: 'auto', overscrollBehavior: 'contain',
             background: C.sheet, borderRadius: '26px 26px 0 0',
+            boxShadow: '0 -1px 0 rgba(18,38,35,0.08), 0 -10px 40px rgba(18,38,35,0.16), 0 -2px 10px rgba(18,38,35,0.06)',
             padding: '0 20px var(--sheet-pad-bottom, calc(36px + env(safe-area-inset-bottom, 0px)))',
             display: 'flex', flexDirection: 'column', gap,
             animation: closing ? 'pb-sheet-out .18s var(--ease-in) both' : swap ? 'none' : 'pb-sheet-in .3s var(--ease-out)',
