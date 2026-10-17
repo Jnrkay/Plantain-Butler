@@ -61,7 +61,7 @@ export default function ShoppingPage({ header, shoppingList, saveSL, genShopping
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%' }}>
             <span style={sans(18, 500, { lineHeight: '22px', letterSpacing: -0.36, color: C.ink, maxWidth: 230 })}>
-              {flash || 'Build my list from low stock and my usual run'}
+              <span key={flash || 'idle'} className="pb-msg" style={{ display: 'block' }}>{flash || 'Build my list from low stock and my usual run'}</span>
             </span>
             <span style={{ width: 44, height: 44, background: C.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Icon name="arrow@18" color={C.amber} />
@@ -83,7 +83,7 @@ export default function ShoppingPage({ header, shoppingList, saveSL, genShopping
       </div>
 
       {/* List 23:6253 */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: `0 20px ${TAB_CLEARANCE}px` }}>
+      <div className="pb-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: `0 20px ${TAB_CLEARANCE}px` }}>
         {sorted.map((s) => (
           <ListItem key={s.id} item={s} low={lowOf(s.name)} onToggle={() => toggle(s.id)} onOpen={() => openSheet('shopItem', { itemId: s.id })} />
         ))}

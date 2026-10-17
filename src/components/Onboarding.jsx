@@ -1,7 +1,7 @@
 // First-run setup. Not drawn in Figma — built from the same parts as the sheets
 // (Tag, steps bar, Field/TextInput, Chip, Button) so it reads as part of the system.
 // Goal: show what the app does, then leave the household with real data to explore.
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { HOUSEHOLD_TYPES, DEFAULT_PROFILE } from '../lib/constants'
 import { C, TX, sans, mono } from '../lib/theme'
 import { uid } from '../lib/utils'
@@ -43,7 +43,9 @@ function Choice({ icon, title, sub, onClick, active }) {
 }
 
 export default function Onboarding({ profile, saveProfile, saveInv, inventory = [], account, onDone }) {
-  const [step, setStep] = useState(0)
+  const [step, setStepRaw] = useState(0)
+  const dir = useRef('up')
+  const setStep = (n) => { dir.current = n > step ? 'r' : 'l'; setStepRaw(n); window.scrollTo(0, 0) }
   const [p, setP] = useState({ ...DEFAULT_PROFILE, ...profile, onboarded: false })
   const [store, setStore] = useState('')
   const [picked, setPicked] = useState({}) // name -> { qty, category }
@@ -215,8 +217,10 @@ export default function Onboarding({ profile, saveProfile, saveInv, inventory = 
           {steps.slice(1).map((_, i) => <div key={i} style={{ flex: 1, height: 3, background: i < step ? C.ink : C.ink15 }} />)}
         </div>
       )}
-      <h1 style={step === 0 ? sans(40, 500, { lineHeight: '44px', letterSpacing: -1.6, color: C.ink }) : TX.title}>{s.title}</h1>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>{s.body}</div>
+      <div key={step} className={`pb-page-${dir.current}`} style={{ display: 'flex', flexDirection: 'column', gap: 24, flex: 1 }}>
+        <h1 style={step === 0 ? sans(40, 500, { lineHeight: '44px', letterSpacing: -1.6, color: C.ink }) : TX.title}>{s.title}</h1>
+        <div className={step === 0 ? 'pb-stagger' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>{s.body}</div>
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', gap: 8 }}>
           {step > 0 && <Button variant="outline" onClick={() => setStep(step - 1)} style={{ width: 112, flexShrink: 0 }}>Back</Button>}

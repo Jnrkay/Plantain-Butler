@@ -125,7 +125,7 @@ export default function TransactionsPage({ header, transactions, saveTx, invento
       )}
 
       {/* Transaction list 23:5970 */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: `0 20px ${TAB_CLEARANCE}px` }}>
+      <div key={`${mk}|${cat || ''}`} className="pb-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: `0 20px ${TAB_CLEARANCE}px` }}>
         {groups.map((g) => (
           <div key={g.date} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <LabelRow left={dateGroupLabel(g.date)} right={`GHS ${money(sum(g.items, lineTotal))}`} style={{ padding: '0 4px 4px' }} />

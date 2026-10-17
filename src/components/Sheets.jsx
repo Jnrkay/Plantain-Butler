@@ -568,7 +568,7 @@ function ConfirmDialog({ onClose, title, body, confirmLabel, onConfirm, withBack
       <div role="alertdialog" aria-label={title}
         style={{
           position: 'absolute', left: '50%', top: 'min(calc(env(safe-area-inset-top, 0px) + 212px), 50%)', transform: 'translateX(-50%)', width: 'min(330px, calc(100vw - 60px))',
-          background: C.white, padding: 20, display: 'flex', flexDirection: 'column', gap: 16, animation: 'pb-fade-in .15s ease',
+          background: C.white, padding: 20, display: 'flex', flexDirection: 'column', gap: 16, animation: 'pb-pop-in .2s var(--ease-out)',
         }}>
         <div style={{ width: 44, height: 44, background: C.ember, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="alert@22" />

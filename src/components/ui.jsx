@@ -1,6 +1,6 @@
 // Shared building blocks for the Sea Glass & Ember design.
 // Measurements map 1:1 to the Figma nodes named in the comments.
-import { useEffect } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { C, F, TX, sans, mono } from '../lib/theme'
 import { ICONS } from '../lib/icons'
 
@@ -133,7 +133,7 @@ export function Checkbox({ checked, size = 24, onClick, label }) {
         border: checked ? 'none' : `1.5px solid ${size > 20 ? C.ink45 : C.ink40}`,
       }}
     >
-      {checked && <Icon name={size > 20 ? 'check@14' : 'check@12'} color={C.amber} />}
+      {checked && <span className="pb-pop" style={{ display: 'flex' }}><Icon name={size > 20 ? 'check@14' : 'check@12'} color={C.amber} /></span>}
     </button>
   )
 }
@@ -193,8 +193,16 @@ export function Button({ variant = 'amber', icon, iconColor, children, onClick, 
 
 /* ---------- Segmented control (23:7601) ---------- */
 export function Segmented({ options, value, onChange, height = 44, activeBg = C.amber, activeColor = C.ink, fontSize = 14, boldInactive = false }) {
+  const idx = Math.max(0, options.findIndex((o) => o.value === value))
+  const n = options.length
   return (
-    <div style={{ display: 'flex', border: `1px solid ${C.ink20}`, width: '100%' }}>
+    <div style={{ position: 'relative', display: 'flex', border: `1px solid ${C.ink20}`, width: '100%' }}>
+      {/* One highlight that slides to the chosen option */}
+      <div aria-hidden style={{
+        position: 'absolute', top: 0, bottom: 0, left: 0, width: `${100 / n}%`, background: activeBg,
+        transform: `translateX(${idx * 100}%)`, transition: 'transform .28s var(--ease-out)',
+        opacity: options.some((o) => o.value === value) ? 1 : 0,
+      }} />
       {options.map((o, i) => {
         const active = o.value === value
         return (
@@ -202,11 +210,11 @@ export function Segmented({ options, value, onChange, height = 44, activeBg = C.
             key={o.value}
             onClick={() => onChange(o.value)}
             style={{
-              ...reset, ...center, flex: 1, height, background: active ? activeBg : 'transparent',
+              ...reset, ...center, position: 'relative', flex: 1, height, background: 'transparent',
               borderLeft: i ? `1px solid ${C.ink20}` : 'none',
             }}
           >
-            <span style={sans(fontSize, active || boldInactive ? 500 : 400, { color: active ? activeColor : C.ink })}>{o.label}</span>
+            <span style={{ ...sans(fontSize, active || boldInactive ? 500 : 400, { color: active ? activeColor : C.ink }), transition: 'color .2s ease' }}>{o.label}</span>
           </button>
         )
       })}
@@ -285,7 +293,7 @@ export function QtyStepper({ value, onChange, min = 1 }) {
       <button aria-label="Decrease" onClick={() => onChange(Math.max(min, value - 1))} style={{ ...reset, ...center, width: 40, height: 44 }}>
         <Icon name="minus@14" />
       </button>
-      <span style={sans(15, 500, { color: C.ink })}>{value}</span>
+      <span key={value} className="pb-bump" style={sans(15, 500, { color: C.ink })}>{value}</span>
       <button aria-label="Increase" onClick={() => onChange(value + 1)} style={{ ...reset, ...center, width: 40, height: 44, background: C.ink, marginRight: -1 }}>
         <Icon name="plus@14" color={C.amber} />
       </button>
@@ -294,38 +302,88 @@ export function QtyStepper({ value, onChange, min = 1 }) {
 }
 
 /* ---------- Bottom sheet (23:6661) ---------- */
+// Slides up on open, slides down on close, drags down to dismiss. Moving from one sheet
+// straight to another (item → edit) swaps the content in place instead of re-sliding.
+const SheetCtx = createContext(null)
+let lastSheetUnmount = 0
+
 export function Sheet({ onClose, children, gap = 16, label }) {
+  const [swap] = useState(() => Date.now() - lastSheetUnmount < 160)
+  const [closing, setClosing] = useState(false)
+  const panel = useRef(null)
+  const drag = useRef(null)
+  const close = useCallback(() => {
+    if (closing) return
+    setClosing(true)
+    setTimeout(() => onClose?.(), 180)
+  }, [closing, onClose])
+
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose?.()
+    const onKey = (e) => e.key === 'Escape' && close()
     window.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
-  }, [onClose])
+  }, [close])
+  useEffect(() => () => { lastSheetUnmount = Date.now() }, [])
+
+  // Drag the top of the sheet down to dismiss it
+  const onPointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return
+    drag.current = { y: e.clientY, t: Date.now(), dy: 0 }
+    panel.current.style.transition = 'none'
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }
+  const onPointerMove = (e) => {
+    const d = drag.current
+    if (!d) return
+    d.dy = Math.max(0, e.clientY - d.y)
+    panel.current.style.transform = `translateY(${d.dy}px)`
+  }
+  const onPointerUp = () => {
+    const d = drag.current
+    drag.current = null
+    if (!d) return
+    const fast = d.dy / Math.max(1, Date.now() - d.t) > 0.6
+    panel.current.style.transition = 'transform .22s var(--ease-out)'
+    if (d.dy > 110 || (fast && d.dy > 30)) { panel.current.style.transform = 'translateY(105%)'; setTimeout(() => onClose?.(), 200) }
+    else panel.current.style.transform = 'translateY(0)'
+  }
+
   return (
-    <div role="dialog" aria-modal="true" aria-label={label} style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: C.scrim, animation: 'pb-fade-in .2s ease' }} />
-      <div
-        style={{
-          position: 'relative', width: '100%', maxWidth: 480, maxHeight: 'calc(100dvh - 40px)', overflowY: 'auto',
-          background: C.sheet, borderRadius: '26px 26px 0 0',
-          padding: '12px 20px calc(36px + env(safe-area-inset-bottom, 0px))',
-          display: 'flex', flexDirection: 'column', gap,
-          animation: 'pb-sheet-in .28s cubic-bezier(.2,.8,.2,1)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <div style={{ width: 40, height: 4, background: C.ink25 }} />
+    <SheetCtx.Provider value={close}>
+      <div role="dialog" aria-modal="true" aria-label={label} style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+        <div onClick={close} style={{ position: 'absolute', inset: 0, background: C.scrim, animation: closing ? 'pb-fade-out .18s ease both' : swap ? 'none' : 'pb-fade-in .22s ease' }} />
+        <div
+          ref={panel}
+          style={{
+            position: 'relative', width: '100%', maxWidth: 480, maxHeight: 'calc(100dvh - 40px)', overflowY: 'auto', overscrollBehavior: 'contain',
+            background: C.sheet, borderRadius: '26px 26px 0 0',
+            padding: '0 20px calc(36px + env(safe-area-inset-bottom, 0px))',
+            display: 'flex', flexDirection: 'column', gap,
+            animation: closing ? 'pb-sheet-out .18s var(--ease-in) both' : swap ? 'none' : 'pb-sheet-in .3s var(--ease-out)',
+          }}
+        >
+          <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+            style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 0', margin: `0 -20px -${Math.max(0, gap - 4)}px`, paddingBottom: Math.max(4, gap - 4), touchAction: 'none', cursor: 'grab' }}>
+            <div style={{ width: 40, height: 4, background: C.ink25 }} />
+          </div>
+          <div style={{ display: 'contents' }}>
+            {swap ? <SwapIn gap={gap}>{children}</SwapIn> : children}
+          </div>
         </div>
-        {children}
       </div>
-    </div>
+    </SheetCtx.Provider>
   )
 }
+const SwapIn = ({ children, gap }) => <div style={{ display: 'flex', flexDirection: 'column', gap, animation: 'pb-swap .2s var(--ease-out)' }}>{children}</div>
+// Close the current sheet with its exit animation (falls back to the given handler)
+export const useSheetClose = (fallback) => useContext(SheetCtx) || fallback
 
 export function CloseButton({ onClick }) {
+  const close = useSheetClose(onClick)
   return (
-    <button aria-label="Close" onClick={onClick} style={{ ...reset, ...center, width: 36, height: 36, border: `1px solid ${C.ink25}` }}>
+    <button aria-label="Close" onClick={close} style={{ ...reset, ...center, width: 36, height: 36, border: `1px solid ${C.ink25}` }}>
       <Icon name="x@16" />
     </button>
   )

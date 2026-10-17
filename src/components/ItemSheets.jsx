@@ -5,7 +5,7 @@ import { C, TX, sans, mono } from '../lib/theme'
 import { CATEGORIES } from '../lib/constants'
 import { money, shortDate, pad2, stockOf, categoryIcon, purchasesOf, MONTHS, parseDate, STOCK, daysLabel } from '../lib/derive'
 import { typeKey, typeOf, brandOf, everyLabel, daysLeftLabel, KNOWN_TYPES } from '../lib/learn'
-import { Sheet, SheetHeader, Icon, Button, Field, TextInput, SelectInput, Segmented, reset } from './ui'
+import { Sheet, SheetHeader, CloseButton, Icon, Button, Field, TextInput, SelectInput, Segmented, reset } from './ui'
 
 const catOptions = CATEGORIES.map((c) => ({ value: c, label: c }))
 const num = (v) => (v === '' || v === null || v === undefined ? '' : String(v))
@@ -99,9 +99,7 @@ export function ItemSheet({ onClose, itemId, inventory, saveInv, transactions, a
             {typeName.toUpperCase()}{brand ? ` · ${brand.toUpperCase()}` : ''}{item.store ? ` · ${item.store.toUpperCase()}` : ''}
           </span>
         </div>
-        <button aria-label="Close" onClick={onClose} style={{ ...reset, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${C.ink25}`, flexShrink: 0 }}>
-          <Icon name="x@16" />
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 0', borderTop: `1px solid ${C.ink15}`, borderBottom: `1px solid ${C.ink15}` }}>
@@ -109,7 +107,7 @@ export function ItemSheet({ onClose, itemId, inventory, saveInv, transactions, a
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={TX.label}>{estimated ? 'BUTLER ESTIMATE' : 'IN STOCK'}</span>
             <span style={sans(64, 300, { lineHeight: '68px', letterSpacing: -3.2, color: C.ink })}>
-              {estimated && <span style={{ color: C.ink55 }}>≈</span>}{pad2(est)}
+              {estimated && <span style={{ color: C.ink55 }}>≈</span>}<span key={est} className="pb-bump">{pad2(est)}</span>
             </span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>

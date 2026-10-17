@@ -74,7 +74,7 @@ export default function OverflowMenu({ profile, openSheet, onClose, account, sav
         style={{
           position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 52px)',
           right: 'max(20px, calc((100vw - 480px) / 2 + 20px))', width: 250,
-          background: C.white, padding: '8px 0', display: 'flex', flexDirection: 'column', animation: 'pb-pop-in .15s ease',
+          background: C.white, padding: '8px 0', display: 'flex', flexDirection: 'column', animation: 'pb-pop-in .18s var(--ease-out)', transformOrigin: 'top right',
         }}
       >
         <button onClick={() => openSheet('profile')} className="pb-menu-item"

@@ -171,7 +171,7 @@ export default function InventoryPage({ header, inventory, profile, openSheet })
         <Chip label="Low" count={lowCount} active={filter.status === 'lowish' && !filter.cats.size} onClick={() => setFilter({ ...filter, cats: new Set(), status: 'lowish' })} />
       </ChipRow>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: `0 20px ${TAB_CLEARANCE}px` }}>
+      <div key={`${q}|${filter.status}|${[...filter.cats].join(',')}|${filter.sort}`} className="pb-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: `0 20px ${TAB_CLEARANCE}px` }}>
         {list.map((item) => <ItemRow key={item.id} item={item} onClick={() => openSheet('item', { itemId: item.id })} />)}
         {list.length === 0 && (
           <div style={{ background: C.row, padding: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>

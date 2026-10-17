@@ -47,6 +47,7 @@ const TABS = [
   { key: 'assistant', icon: 'chat', label: 'Butler' },
 ]
 
+// The amber pill grows out of the tab you tap; labels slide open rather than pop
 function TabBar({ page, setPage }) {
   return (
     <nav
@@ -60,16 +61,21 @@ function TabBar({ page, setPage }) {
     >
       {TABS.map((t) => {
         const active = page === t.key
-        return active ? (
-          <button key={t.key} aria-current="page" onClick={() => setPage(t.key)}
-            style={{ ...reset, display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 16px 0 12px', background: C.amber, borderRadius: 22, flexShrink: 0 }}>
-            <Icon name={`${t.icon}@18`} color={C.ink} />
-            <span style={sans(13, 500, { color: C.ink, whiteSpace: 'nowrap' })}>{t.label}</span>
-          </button>
-        ) : (
-          <button key={t.key} aria-label={t.label} onClick={() => setPage(t.key)}
-            style={{ ...reset, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 44, flexShrink: 0 }}>
-            <Icon name={`${t.icon}@20`} color={C.cream} />
+        return (
+          <button key={t.key} aria-label={t.label} aria-current={active ? 'page' : undefined} onClick={() => setPage(t.key)}
+            style={{
+              ...reset, display: 'flex', alignItems: 'center', justifyContent: 'center', height: 44, flexShrink: 0, borderRadius: 22,
+              minWidth: 40, padding: active ? '0 16px 0 12px' : '0 10px', background: active ? C.amber : 'rgba(255,178,0,0)',
+              transition: 'background-color .25s ease, padding .3s var(--ease-out), scale .18s var(--ease-spring)',
+            }}>
+            <span style={{ display: 'flex', transition: 'transform .3s var(--ease-spring)', transform: active ? 'scale(1)' : 'scale(.95)' }}>
+              <Icon name={active ? `${t.icon}@18` : `${t.icon}@20`} color={active ? C.ink : C.cream} />
+            </span>
+            <span style={{
+              ...sans(13, 500, { color: C.ink, whiteSpace: 'nowrap' }), overflow: 'hidden', display: 'inline-block',
+              maxWidth: active ? 72 : 0, marginLeft: active ? 8 : 0, opacity: active ? 1 : 0,
+              transition: 'max-width .3s var(--ease-out), margin-left .3s var(--ease-out), opacity .2s ease .05s',
+            }}>{t.label}</span>
           </button>
         )
       })}
@@ -145,7 +151,15 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [store.phase, profile?.onboarded, store.inventory, transactions]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const setPage = useCallback((p) => { setPageRaw(p); setMenuOpen(false); window.scrollTo(0, 0) }, [])
+  const pageDir = useRef('up')
+  const setPage = useCallback((p) => {
+    setPageRaw((cur) => {
+      const a = TABS.findIndex((t) => t.key === cur), b = TABS.findIndex((t) => t.key === p)
+      pageDir.current = b > a ? 'r' : b < a ? 'l' : pageDir.current
+      return p
+    })
+    setMenuOpen(false); window.scrollTo(0, 0)
+  }, [])
 
   const addTransaction = (items, shop, date) => {
     let inv = store.inventory.map(clean)
@@ -290,7 +304,9 @@ export default function App() {
   return (
     <div style={{ minHeight: '100dvh', background: C.cream, color: C.ink, display: 'flex', justifyContent: 'center' }}>
       <main style={{ position: 'relative', width: '100%', maxWidth: 480, minHeight: '100dvh', display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-        {pages[page]}
+        <div key={page} className={`pb-page-${pageDir.current}`} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+          {pages[page]}
+        </div>
         {menuOpen && <OverflowMenu {...data} {...actions} onClose={() => setMenuOpen(false)} />}
       </main>
       <PullToRefresh onRefresh={store.refresh} disabled={page === 'assistant' || !!sheet || menuOpen} />

@@ -28,7 +28,7 @@ function RichText({ text, color }) {
 
 function ButlerBubble({ children, label }) {
   return (
-    <div style={{ background: C.teal, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, width: 'min(300px, 100%)', flexShrink: 0 }}>
+    <div className="pb-msg" style={{ transformOrigin: 'left bottom', background: C.teal, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, width: 'min(300px, 100%)', flexShrink: 0 }}>
       {label && <span style={{ ...TX.label, color: C.blush80 }}>PLANTAIN BUTLER</span>}
       {children}
     </div>
@@ -37,7 +37,7 @@ function ButlerBubble({ children, label }) {
 
 function UserBubble({ text }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
+    <div className="pb-msg" style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0, transformOrigin: 'right bottom' }}>
       <div style={{ background: C.ink, padding: '12px 16px', maxWidth: 280 }}>
         <p style={sans(14, 400, { color: C.cream, lineHeight: '20px' })}>{text}</p>
       </div>
@@ -272,7 +272,7 @@ export default function AssistantPage(props) {
         {feed.map((m) => {
           if (m.kind === 'user') return <UserBubble key={m.id} text={m.text} />
           if (m.kind === 'action') return (
-            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: m.undone ? C.row : C.amber, padding: '10px 12px', width: 'min(300px, 100%)', flexShrink: 0 }}>
+            <div key={m.id} className="pb-msg" style={{ display: 'flex', alignItems: 'center', gap: 8, background: m.undone ? C.row : C.amber, padding: '10px 12px', width: 'min(300px, 100%)', flexShrink: 0 }}>
               <Icon name={m.undone ? 'refresh@16' : 'check@16'} />
               <span style={{ ...sans(13, 500, { color: C.ink, lineHeight: '18px', textDecoration: m.undone ? 'line-through' : 'none' }), flex: 1, minWidth: 0 }}>{m.text}</span>
               {!m.undone && undos.current[m.undoId] && feed.filter((x) => x.undoId === m.undoId).pop()?.id === m.id && (
@@ -281,7 +281,7 @@ export default function AssistantPage(props) {
             </div>
           )
           if (m.kind === 'memory') return (
-            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${C.ink25}`, padding: '10px 12px', width: 'min(300px, 100%)', flexShrink: 0, opacity: m.forgotten ? 0.55 : 1 }}>
+            <div key={m.id} className="pb-msg" style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${C.ink25}`, padding: '10px 12px', width: 'min(300px, 100%)', flexShrink: 0, opacity: m.forgotten ? 0.55 : 1 }}>
               <Icon name="memory@18" />
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <span style={mono(9, 400, { letterSpacing: 0.54, color: C.ink80 })}>{m.forgotten ? 'FORGOTTEN' : `REMEMBERED · ${m.scope === 'personal' ? 'ONLY YOU' : 'HOUSEHOLD'}`}</span>

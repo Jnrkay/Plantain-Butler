@@ -1,4 +1,5 @@
 // A1 · Dashboard (Figma 23:5539)
+import { useEffect, useState } from 'react'
 import { C, TX, sans, mono } from '../lib/theme'
 import { MONTHS_LONG, money, monthlyBudget, sum, isLow } from '../lib/derive'
 import { Header, Tag, Money, Barcode, Icon, reset } from './ui'
@@ -14,6 +15,26 @@ function Stat({ label, value, sub, first }) {
       <span style={sans(11, 400, { color: C.ink80, whiteSpace: 'nowrap' })}>{sub}</span>
     </div>
   )
+}
+
+// The month's total counts up the first time Home opens in a session (then stays put)
+let countedUp = false
+function useCountUp(target, ms = 650) {
+  const [v, setV] = useState(countedUp ? target : 0)
+  useEffect(() => {
+    if (countedUp || !target || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { countedUp = true; setV(target); return }
+    countedUp = true
+    let raf, start
+    const tick = (t) => {
+      start ??= t
+      const p = Math.min(1, (t - start) / ms)
+      setV(target * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => { cancelAnimationFrame(raf); setV(target) }
+  }, [target]) // eslint-disable-line react-hooks/exhaustive-deps
+  return v
 }
 
 // Hero figure shrinks for very large totals so it never overflows the column
@@ -67,6 +88,7 @@ export default function Dashboard({ header, profile, inventory, transactions, mo
   const left = budget - totalSpend
   const totalStr = money(totalSpend)
   const size = heroSize(totalStr)
+  const shown = useCountUp(totalSpend)
 
   const toBuy = shoppingList.filter((s) => !s.checked)
   const est = sum(toBuy, (s) => (Number(s.estPrice) || 0) * (Number(s.qty) || 1))
@@ -81,7 +103,7 @@ export default function Dashboard({ header, profile, inventory, transactions, mo
         <Tag>TOTAL SPENT · {month}</Tag>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span style={mono(13, 500, { color: C.ink80 })}>GHS</span>
-          <Money value={totalStr} size={size} tracking={-size * 0.05} />
+          <Money value={money(shown)} size={size} tracking={-size * 0.05} />
         </div>
       </section>
 
